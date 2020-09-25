@@ -1,3 +1,10 @@
+data/download.sh
+
+data/
+
+sign_sample_model/
+
+env/
 
 .idea/
 

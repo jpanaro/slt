@@ -25,6 +25,8 @@ from signjoey.helpers import freeze_params
 from torch import Tensor
 from typing import Union
 
+import pdb
+
 
 class SignModel(nn.Module):
     """
@@ -194,41 +196,70 @@ class SignModel(nn.Module):
         """
         # pylint: disable=unused-variable
 
-        # Do a forward pass
-        decoder_outputs, gloss_probabilities = self.forward(
-            sgn=batch.sgn,
-            sgn_mask=batch.sgn_mask,
-            sgn_lengths=batch.sgn_lengths,
-            txt_input=batch.txt_input,
-            txt_mask=batch.txt_mask,
-        )
-
-        if self.do_recognition:
-            assert gloss_probabilities is not None
-            # Calculate Recognition Loss
-            recognition_loss = (
-                recognition_loss_function(
-                    gloss_probabilities,
-                    batch.gls,
-                    batch.sgn_lengths.long(),
-                    batch.gls_lengths.long(),
+        if self.sc_flag:
+            # Get greedy result
+            self.model.eval()
+            with torch.no_grad():
+                greedy_decoder_outputs, greedy_gloss_probabilities = self.forward(
+                    sgn=batch.sgn,
+                    sgn_mask=batch.sgn_mask,
+                    sgn_lengths=batch.sgn_lengths,
+                    txt_input=batch.txt_input,
+                    txt_mask=batch.txt_mask,
                 )
-                * recognition_loss_weight
+            # Get general result
+            self.model.train()
+            general_decoder_outputs, general_gloss_probabilities = self.forward(
+                sgn=batch.sgn,
+                sgn_mask=batch.sgn_mask,
+                sgn_lengths=batch.sgn_lengths,
+                txt_input=batch.txt_input,
+                txt_mask=batch.txt_mask,
             )
+            # Get word indices from output logits
+            greedy_word_outputs, _, _, _ = greedy_decoder_outputs
+            greedy_log_probs = F.log_softmax(greedy_word_outputs, dim=-1)
+            general_word_outputs, _, _, _ = general_decoder_outputs
+            general_log_probs = F.log_softmax(general_word_outputs, dim=-1)
+            
         else:
-            recognition_loss = None
+            # Do a forward pass
+            pdb.set_trace()
+            decoder_outputs, gloss_probabilities = self.forward(
+                sgn=batch.sgn,
+                sgn_mask=batch.sgn_mask,
+                sgn_lengths=batch.sgn_lengths,
+                txt_input=batch.txt_input,
+                txt_mask=batch.txt_mask,
+            )
 
-        if self.do_translation:
-            assert decoder_outputs is not None
-            word_outputs, _, _, _ = decoder_outputs
-            # Calculate Translation Loss
-            txt_log_probs = F.log_softmax(word_outputs, dim=-1)
-            translation_loss = (
-                translation_loss_function(txt_log_probs, batch.txt)
-                * translation_loss_weight
-            )
-        else:
-            translation_loss = None
+            if self.do_recognition:
+                assert gloss_probabilities is not None
+                # Calculate Recognition Loss
+                recognition_loss = (
+                    recognition_loss_function(
+                        gloss_probabilities,
+                        batch.gls,
+                        batch.sgn_lengths.long(),
+                        batch.gls_lengths.long(),
+                    )
+                    * recognition_loss_weight
+                )
+            else:
+                recognition_loss = None
+
+            if self.do_translation:
+                assert decoder_outputs is not None
+                pdb.set_trace()
+                word_outputs, _, _, _ = decoder_outputs
+                # Calculate Translation Loss
+                txt_log_probs = F.log_softmax(word_outputs, dim=-1)
+                translation_loss = (
+                    translation_loss_function(txt_log_probs, batch.txt)
+                    * translation_loss_weight
+                )
+            else:
+                translation_loss = None
 
         return recognition_loss, translation_loss
 

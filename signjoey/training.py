@@ -9,6 +9,7 @@ import os
 import shutil
 import time
 import queue
+import pdb
 
 from signjoey.model import build_model
 from signjoey.batch import Batch

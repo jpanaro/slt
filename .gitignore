@@ -4,8 +4,14 @@ data/
 
 sign_sample_model/
 
+sign_sample_model_copy/
+
+sign_sample_model_new/
+
 env/
 
 .idea/
+
+configs/
 
 *.pyc

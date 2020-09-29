@@ -4,6 +4,7 @@ import tensorflow as tf
 tf.config.set_visible_devices([], "GPU")
 
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -13,6 +14,7 @@ from signjoey.embeddings import Embeddings, SpatialEmbeddings
 from signjoey.encoders import Encoder, RecurrentEncoder, TransformerEncoder
 from signjoey.decoders import Decoder, RecurrentDecoder, TransformerDecoder
 from signjoey.search import beam_search, greedy
+from signjoey.scoring import get_self_critical_reward, RewardCriterion, init_scorer
 from signjoey.vocabulary import (
     TextVocabulary,
     GlossVocabulary,
@@ -22,6 +24,7 @@ from signjoey.vocabulary import (
 )
 from signjoey.batch import Batch
 from signjoey.helpers import freeze_params
+from signjoey.tools import sc_trim
 from torch import Tensor
 from typing import Union
 
@@ -182,6 +185,7 @@ class SignModel(nn.Module):
         translation_loss_function: nn.Module,
         recognition_loss_weight: float,
         translation_loss_weight: float,
+        sc_flag,
     ) -> (Tensor, Tensor):
         """
         Compute non-normalized loss and number of tokens for a batch
@@ -195,10 +199,10 @@ class SignModel(nn.Module):
         :return: translation_loss: sum of losses over non-pad elements in the batch
         """
         # pylint: disable=unused-variable
-
-        if self.sc_flag:
+        #pdb.set_trace()
+        if sc_flag:
             # Get greedy result
-            self.model.eval()
+            self.eval()
             with torch.no_grad():
                 greedy_decoder_outputs, greedy_gloss_probabilities = self.forward(
                     sgn=batch.sgn,
@@ -208,7 +212,7 @@ class SignModel(nn.Module):
                     txt_mask=batch.txt_mask,
                 )
             # Get general result
-            self.model.train()
+            self.train()
             general_decoder_outputs, general_gloss_probabilities = self.forward(
                 sgn=batch.sgn,
                 sgn_mask=batch.sgn_mask,
@@ -218,13 +222,24 @@ class SignModel(nn.Module):
             )
             # Get word indices from output logits
             greedy_word_outputs, _, _, _ = greedy_decoder_outputs
-            greedy_log_probs = F.log_softmax(greedy_word_outputs, dim=-1)
+            #greedy_log_probs = F.log_softmax(greedy_word_outputs, dim=-1)
+            greedy_res = greedy_word_outputs.argmax(2)
             general_word_outputs, _, _, _ = general_decoder_outputs
-            general_log_probs = F.log_softmax(general_word_outputs, dim=-1)
+            #general_log_probs = F.log_softmax(general_word_outputs, dim=-1)
+            gen_res = torch.distributions.Categorical(logits=general_word_outputs.detach()).sample()
+            # Clean word indices and output probs
+            greedy_out = sc_trim(greedy_res, greedy_word_outputs.clone())
+            output = sc_trim(gen_res, general_word_outputs.clone())
+            # Calculate Reward
+            pdb.set_trace()
+            gen_sentences = self.txt_vocab.arrays_to_sentences(arrays=gen_res, cut_at_eos=False)
+            greedy_sentences = self.txt_vocab.arrays_to_sentences(arrays=greedy_res)
+            pdb.set_trace()
+            reward = get_self_critical_reward(greedy_res, batch.txt_input, gen_res)
             
         else:
             # Do a forward pass
-            pdb.set_trace()
+            #pdb.set_trace()
             decoder_outputs, gloss_probabilities = self.forward(
                 sgn=batch.sgn,
                 sgn_mask=batch.sgn_mask,
@@ -250,7 +265,7 @@ class SignModel(nn.Module):
 
             if self.do_translation:
                 assert decoder_outputs is not None
-                pdb.set_trace()
+                #pdb.set_trace()
                 word_outputs, _, _, _ = decoder_outputs
                 # Calculate Translation Loss
                 txt_log_probs = F.log_softmax(word_outputs, dim=-1)

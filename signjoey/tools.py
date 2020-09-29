@@ -63,7 +63,7 @@ def sc_trim(out_sent, out_probs):
         index_track = 0
         for j in range(out_sent[i].shape[0]): # Just 29
             if EOS_track == 1:
-                out_sent[i][j] = 0
+                out_sent[i][j] = 1
                 #out_probs[i][j] = 0
             else:
                 new_probs[i][j] = F.log_softmax(out_probs[i][j])

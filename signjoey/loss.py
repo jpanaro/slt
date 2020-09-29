@@ -7,6 +7,7 @@ import torch
 from torch import nn, Tensor
 from torch.autograd import Variable
 
+import pdb
 
 class XentLoss(nn.Module):
     """

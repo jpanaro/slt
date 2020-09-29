@@ -5,7 +5,7 @@ import torch.nn as nn
 import numpy as np
 from collections import OrderedDict
 
-from utils.tools import torch_to_list, array_to_str
+from signjoey.tools import torch_to_list, array_to_str
 from nltk.translate.bleu_score import sentence_bleu
 
 import sys

@@ -31,6 +31,7 @@ from signjoey.builders import build_optimizer, build_scheduler, build_gradient_c
 from signjoey.prediction import test
 from signjoey.metrics import wer_single
 from signjoey.vocabulary import SIL_TOKEN
+from signjoey.scoring import init_scorer
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from torchtext.data import Dataset
@@ -200,6 +201,9 @@ class TrainManager:
                 reset_scheduler=reset_scheduler,
                 reset_optimizer=reset_optimizer,
             )
+        
+        # RL
+        self.sc_flag = False
 
     def _get_recognition_params(self, train_config) -> None:
         # NOTE (Cihan): The blank label is the silence index in the gloss vocabulary.
@@ -355,6 +359,8 @@ class TrainManager:
             shuffle=self.shuffle,
         )
         epoch_no = None
+        # Initialize CIDEr scorer for self critical reward
+        init_scorer()
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
 
@@ -654,7 +660,14 @@ class TrainManager:
                         val_res["valid_scores"]["chrf"] if self.do_translation else -1,
                         val_res["valid_scores"]["rouge"] if self.do_translation else -1,
                     )
-
+                    
+                    ###############################################################################
+                    # Swap to RL once bleu scores are good enough for finetuning (normally do > 20)
+                    if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 19:
+                        #pdb.set_trace()
+                        self.sc_flag = True
+                    ###############################################################################
+                    
                     self._log_examples(
                         sequences=[s for s in valid_data.sequence],
                         gls_references=val_res["gls_ref"]
@@ -751,6 +764,7 @@ class TrainManager:
             translation_loss_weight=self.translation_loss_weight
             if self.do_translation
             else None,
+            sc_flag=self.sc_flag
         )
 
         # normalize translation loss

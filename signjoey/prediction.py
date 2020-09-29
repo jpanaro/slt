@@ -147,6 +147,7 @@ def validate_on_data(
                 translation_loss_weight=translation_loss_weight
                 if do_translation
                 else None,
+                sc_flag=False # Never do RL on validation
             )
             if do_recognition:
                 total_recognition_loss += batch_recognition_loss

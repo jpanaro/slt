@@ -2,6 +2,7 @@ import numpy
 import pdb
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from collections import OrderedDict
 
@@ -60,37 +61,34 @@ def init_scorer():
     Cider_scorer = Cider(df='RWTH-words')
 
 # Gets the reward for a batch of sentences
-def get_self_critical_reward(greedy_res, data_gts, gen_result, vocab_dict, config):
+def get_self_critical_reward(greedy_res, data_gts, gen_result):
     # Prepare gts
-    captions_reward = data_gts.cpu().numpy().astype('uint32')
-    captions_arr = []
-    for i in range(len(captions_reward)):
-        captions_arr.append([captions_reward[i]])
-    captions_indices = torch.arange(0, len(captions_arr))
-    gts = [captions_arr[_] for _ in captions_indices.tolist()]
-    # Define important measures
-    batch_size = len(gts)
-    gen_res_size = gen_result.shape[0]
-    seq_per_img = gen_res_size // len(gts)
-
-    gen_res_decode = torch_to_list(gen_result, vocab_dict, config)
-    greedy_res_decode = torch_to_list(greedy_res, vocab_dict, config)
-    gt_decode = torch_to_list(data_gts, vocab_dict, config)
     #pdb.set_trace()
-    # Convert data_gts to list of numpys
-    #test = gen_res_decode[0][1:]
-    #separator = ' '
-    #test_2 = separator.join(test)
+    #captions_reward = data_gts.cpu().numpy().astype('uint32')
+    #captions_arr = []
+    #for i in range(len(captions_reward)):
+    #    captions_arr.append([captions_reward[i]])
+    #captions_indices = torch.arange(0, len(captions_arr))
+    #gts = [captions_arr[_] for _ in captions_indices.tolist()]
+    # Define important measures
+    batch_size = len(data_gts)
+    gen_res_size = len(gen_result)
+    seq_per_img = gen_res_size // batch_size
+
+    #gen_res_decode = torch_to_list(gen_result, vocab_dict, config)
+    #greedy_res_decode = torch_to_list(greedy_res, vocab_dict, config)
+    #gt_decode = torch_to_list(data_gts, vocab_dict, config)
+    #pdb.set_trace()
     res = OrderedDict()
     for i in range(gen_res_size): # Put both captions into ordered dict
-        res[i] = [(array_to_str(gen_res_decode[i][1:]))] # Trying [i][:] instead of [i][1:]
+        res[i] = [(array_to_str(gen_result[i][1:]))] # Trying [i][:] instead of [i][1:]
     for i in range(batch_size):
-        res[gen_res_size + i] = [array_to_str(greedy_res_decode[i][1:])]
+        res[gen_res_size + i] = [array_to_str(greedy_res[i][1:])]
     
     #pdb.set_trace()
     gts = OrderedDict() # Put gts into similar format ordered dict
     for i in range(batch_size):
-        gts[i] = [array_to_str(gt_decode[i])]# for j in range(len(data_gts[i]))]
+        gts[i] = [array_to_str(data_gts[i])]# for j in range(len(data_gts[i]))]
     
     res_ = [{'image_id':i, 'caption': res[i]} for i in range(len(res))]
     gts_ = {i: gts[i // seq_per_img] for i in range(gen_res_size)}
@@ -104,7 +102,11 @@ def get_self_critical_reward(greedy_res, data_gts, gen_result, vocab_dict, confi
     #pdb.set_trace()
     scores = scores[:gen_res_size].reshape(batch_size, seq_per_img) - scores[-batch_size:][:, np.newaxis]
     scores = scores.reshape(gen_res_size)
-    rewards = np.repeat(scores[:, np.newaxis], gen_result.shape[1], 1)
+    rewards = np.repeat(scores[:, np.newaxis], max(map(len, gen_result)), 1)
+    #########################################3
+    #pdb.set_trace()
+    if rewards.shape[1] != max(map(len, gen_result)):
+        pdb.set_trace()
 
     return rewards
 
@@ -143,8 +145,11 @@ class RewardCriterion(nn.Module):
         
         input = input.reshape(-1)
         reward = reward.reshape(-1)
-        mask = (seq>0).float() # Purpose: have '1s' where there are actual words and '0s' where there are no words in sequence
+        #pdb.set_trace()
+        mask = (seq>1).float() # Purpose: have '1s' where there are actual words and '0s' where there are no words in sequence
         mask = torch.cat([mask.new(mask.size(0), 1).fill_(1), mask[:, :-1]], 1).reshape(-1)
+        if (input.shape[0] != reward.shape[0]):
+            pdb.set_trace()
         output = - input * reward * mask
         output = torch.sum(output) / torch.sum(mask)
 

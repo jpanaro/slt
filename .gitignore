@@ -8,6 +8,8 @@ sign_sample_model_copy/
 
 sign_sample_model_RL/
 
+sign_sample_model_recog/
+
 env/
 
 .idea/

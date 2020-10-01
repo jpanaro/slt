@@ -467,6 +467,7 @@ class TrainManager:
                     #   these recognition only and translation only parameters!
                     #   Maybe have a NamedTuple with optional fields?
                     #   Hmm... Future Cihan's problem.
+                    self.do_recognition = True
                     val_res = validate_on_data(
                         model=self.model,
                         data=valid_data,
@@ -665,6 +666,7 @@ class TrainManager:
                     # Swap to RL once bleu scores are good enough for finetuning (normally do > 20)
                     if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 19:
                         #pdb.set_trace()
+                        #self.do_recognition = False
                         self.sc_flag = True
                     ###############################################################################
                     
@@ -783,6 +785,8 @@ class TrainManager:
         else:
             normalized_translation_loss = 0
 
+        if self.sc_flag == True:
+            self.do_recognition = False
         # TODO (Cihan): Add Gloss Token normalization (?)
         #   I think they are already being normalized by batch
         #   I need to think about if I want to normalize them by token.

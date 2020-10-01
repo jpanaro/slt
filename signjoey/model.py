@@ -79,6 +79,9 @@ class SignModel(nn.Module):
         self.do_recognition = do_recognition
         self.do_translation = do_translation
 
+        # Potentially try this?
+        self.rl_criterion = RewardCriterion()
+
     # pylint: disable=arguments-differ
     def forward(
         self,
@@ -231,11 +234,25 @@ class SignModel(nn.Module):
             greedy_out = sc_trim(greedy_res, greedy_word_outputs.clone())
             output = sc_trim(gen_res, general_word_outputs.clone())
             # Calculate Reward
-            pdb.set_trace()
-            gen_sentences = self.txt_vocab.arrays_to_sentences(arrays=gen_res, cut_at_eos=False)
-            greedy_sentences = self.txt_vocab.arrays_to_sentences(arrays=greedy_res)
-            pdb.set_trace()
-            reward = get_self_critical_reward(greedy_res, batch.txt_input, gen_res)
+            gen_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=gen_res)
+            greedy_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=greedy_res)
+            data_gts = self.txt_vocab.rl_arrays_to_sentences(arrays=batch.txt_input)
+            #pdb.set_trace()
+            reward = get_self_critical_reward(greedy_sentences, data_gts, gen_sentences)
+            #if (output.reshape(-1).shape[0] != reward.reshape(-1).shape[0]):
+            #    pdb.set_trace()
+            reward = torch.from_numpy(reward).float().to(gen_res.device)
+            #pdb.set_trace()
+            #############################################################################
+            temp_output = output.gather(2, gen_res.data.unsqueeze(2)).squeeze(2)
+            temp_output_1 = temp_output.reshape(-1)
+            temp_reward = reward.reshape(-1)
+            if (temp_output_1.shape[0] != temp_reward.shape[0]):
+                pdb.set_trace()
+            loss = self.rl_criterion(output, gen_res.data, reward)
+            loss = loss.mean()
+            #pdb.set_trace()
+            return None, loss # recognition_loss=0, translation_loss=loss
             
         else:
             # Do a forward pass

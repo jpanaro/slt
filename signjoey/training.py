@@ -120,7 +120,7 @@ class TrainManager:
         ]:
             self.minimize_metric = True
         elif self.early_stopping_metric == "eval_metric":
-            if self.eval_metric in ["bleu", "chrf", "rouge"]:
+            if self.eval_metric in ["bleu", "chrf", "rouge", "wer"]:
                 assert self.do_translation
                 self.minimize_metric = False
             else:  # eval metric that has to get minimized (not yet implemented)
@@ -361,6 +361,8 @@ class TrainManager:
         epoch_no = None
         # Initialize CIDEr scorer for self critical reward
         init_scorer()
+        # Make sure once sc_flag is on, it stays on
+        rl_track = False
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
 
@@ -467,7 +469,7 @@ class TrainManager:
                     #   these recognition only and translation only parameters!
                     #   Maybe have a NamedTuple with optional fields?
                     #   Hmm... Future Cihan's problem.
-                    self.do_recognition = True
+                    self.do_recognition = True # This is becuase RL makes this false for training
                     val_res = validate_on_data(
                         model=self.model,
                         data=valid_data,
@@ -562,7 +564,10 @@ class TrainManager:
                         assert self.do_translation
                         ckpt_score = val_res["valid_ppl"]
                     else:
-                        ckpt_score = val_res["valid_scores"][self.eval_metric]
+                        if self.eval_metric == "wer":
+                            ckpt_score = 100 - val_res["valid_scores"][self.eval_metric]
+                        else:
+                            ckpt_score = val_res["valid_scores"][self.eval_metric]
 
                     new_best = False
                     if self.is_best(ckpt_score):
@@ -586,6 +591,7 @@ class TrainManager:
                         self.scheduler.step(ckpt_score)
                         now_lr = self.scheduler.optimizer.param_groups[0]["lr"]
 
+                        # Make sure to comment this out if you want to training to go longer
                         if prev_lr != now_lr:
                             if self.last_best_lr != prev_lr:
                                 self.stop = True
@@ -663,11 +669,23 @@ class TrainManager:
                     )
                     
                     ###############################################################################
-                    # Swap to RL once bleu scores are good enough for finetuning (normally do > 20)
-                    if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 19:
-                        #pdb.set_trace()
-                        #self.do_recognition = False
+                    # Swap to RL once WER scores are good enough for finetuning (normally do < 29)
+                    # if val_res["valid_scores"]["wer"] < 30:
+                    #     rl_track = True
+                    # if rl_track:
+                    #     self.do_recognition = False
+                    #     self.sc_flag = True
+                    #     epoch_recognition_loss = 0
+                    ###############################################################################
+
+                    ###############################################################################
+                    # Swap to RL once BLEU scores are good enough for finetuning (normally do > 19)
+                    if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 15:
+                        rl_track = True
+                    if rl_track:
+                        self.do_recognition = False
                         self.sc_flag = True
+                        epoch_recognition_loss = 0
                     ###############################################################################
                     
                     self._log_examples(
@@ -785,8 +803,6 @@ class TrainManager:
         else:
             normalized_translation_loss = 0
 
-        if self.sc_flag == True:
-            self.do_recognition = False
         # TODO (Cihan): Add Gloss Token normalization (?)
         #   I think they are already being normalized by batch
         #   I need to think about if I want to normalize them by token.

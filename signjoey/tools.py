@@ -127,8 +127,8 @@ def torch_to_list(seq, vocab_dict, config):
     return out
 
 # Takes a list of words, or a list of list of words and converts them to sentences
-def list_to_string(seq, config):
-    if config['batch_size'] == 1:
+def list_to_string(seq, batch_size):
+    if batch_size == 1:
         out =  [" ".join(seq)]
     else:
         out = []

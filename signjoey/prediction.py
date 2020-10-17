@@ -8,6 +8,7 @@ import numpy as np
 import pickle as pickle
 import time
 import torch.nn as nn
+import pdb
 
 from typing import List
 from torchtext.data import Dataset
@@ -241,7 +242,7 @@ def validate_on_data(
                 txt_ref = [bpe_postprocess(v) for v in txt_ref]
                 txt_hyp = [bpe_postprocess(v) for v in txt_hyp]
             assert len(txt_ref) == len(txt_hyp)
-
+            #pdb.set_trace()
             # TXT Metrics
             txt_bleu = bleu(references=txt_ref, hypotheses=txt_hyp)
             txt_chrf = chrf(references=txt_ref, hypotheses=txt_hyp)

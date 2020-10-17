@@ -6,8 +6,9 @@ import torch.nn.functional as F
 import numpy as np
 from collections import OrderedDict
 
-from signjoey.tools import torch_to_list, array_to_str
+from signjoey.tools import torch_to_list, array_to_str, list_to_string
 from nltk.translate.bleu_score import sentence_bleu
+from signjoey.metrics import wer_list, bleu
 
 import sys
 try:
@@ -61,7 +62,7 @@ def init_scorer():
     Cider_scorer = Cider(df='RWTH-words')
 
 # Gets the reward for a batch of sentences
-def get_self_critical_reward(greedy_res, data_gts, gen_result):
+def get_self_critical_reward(greedy_res, data_gts, gen_result, factor):
     # Prepare gts
     #pdb.set_trace()
     #captions_reward = data_gts.cpu().numpy().astype('uint32')
@@ -102,12 +103,73 @@ def get_self_critical_reward(greedy_res, data_gts, gen_result):
     #pdb.set_trace()
     scores = scores[:gen_res_size].reshape(batch_size, seq_per_img) - scores[-batch_size:][:, np.newaxis]
     scores = scores.reshape(gen_res_size)
-    rewards = np.repeat(scores[:, np.newaxis], max(map(len, gen_result)), 1)
+    #rewards = np.repeat(scores[:, np.newaxis], max(map(len, gen_result)), 1)
+    rewards = np.repeat(scores[:, np.newaxis], factor, 1)
     #########################################3
     #pdb.set_trace()
-    if rewards.shape[1] != max(map(len, gen_result)):
-        pdb.set_trace()
+    #if rewards.shape[1] != max(map(len, gen_result)):
+    #    pdb.set_trace()
 
+    return rewards
+
+def get_self_critical_reward_bleu(greedy_res, data_gts, gen_result, factor):
+    # Prepare gts
+    #pdb.set_trace()
+    #captions_reward = data_gts.cpu().numpy().astype('uint32')
+    #captions_arr = []
+    #for i in range(len(captions_reward)):
+    #    captions_arr.append([captions_reward[i]])
+    #captions_indices = torch.arange(0, len(captions_arr))
+    #gts = [captions_arr[_] for _ in captions_indices.tolist()]
+    # Define important measures
+    batch_size = len(data_gts)
+    gen_res_size = len(gen_result)
+    seq_per_img = gen_res_size // batch_size
+
+    #gen_res_decode = torch_to_list(gen_result, vocab_dict, config)
+    #greedy_res_decode = torch_to_list(greedy_res, vocab_dict, config)
+    #gt_decode = torch_to_list(data_gts, vocab_dict, config)
+    #pdb.set_trace()
+    # res = OrderedDict()
+    # for i in range(gen_res_size): # Put both captions into ordered dict
+    #     res[i] = [(array_to_str(gen_result[i][1:]))] # Trying [i][:] instead of [i][1:]
+    # for i in range(batch_size):
+    #     res[gen_res_size + i] = [array_to_str(greedy_res[i][1:])]
+
+    # #pdb.set_trace()
+    # gts = OrderedDict() # Put gts into similar format ordered dict
+    # for i in range(batch_size):
+    #     gts[i] = [array_to_str(data_gts[i])]# for j in range(len(data_gts[i]))]
+
+    # res_ = [{'image_id':i, 'caption': res[i]} for i in range(len(res))]
+    # gts_ = {i: gts[i // seq_per_img] for i in range(gen_res_size)}
+    # gts_.update({i+gen_res_size: gts[i] for i in range(batch_size)})
+
+    # #pdb.set_trace()
+
+    # avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
+    pdb.set_trace()
+    gen_hyp = list_to_string(gen_result, batch_size)
+    greedy_hyp = list_to_string(greedy_res, batch_size)
+    txt_ref = list_to_string(data_gts, batch_size)
+
+    # need seperate bleu score for every sentence "pair" in batch, scroll up in tmux to see format
+    scores = []
+
+    gen_bleu = bleu(references=txt_ref, hypotheses=gen_hyp)
+    greedy_bleu = bleu(references=txt_ref, hypotheses=greedy_hyp)
+
+    #scores = txt_bleu["bleu4"]
+    #pdb.set_trace()
+    #scores = scores[:gen_res_size].reshape(batch_size, seq_per_img) - scores[-batch_size:][:, np.newaxis]
+    #scores = scores.reshape(gen_res_size)
+    #rewards = np.repeat(scores[:, np.newaxis], max(map(len, gen_result)), 1)
+    #rewards = np.repeat(scores[:, np.newaxis], factor, 1)
+    #########################################3
+    #pdb.set_trace()
+    #if rewards.shape[1] != max(map(len, gen_result)):
+    #    pdb.set_trace()
+    rewards = 0
     return rewards
 
 # Calculates the CIDEr score for a batch of sentences

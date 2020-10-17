@@ -7,6 +7,8 @@ from signjoey.external_metrics import sacrebleu
 from signjoey.external_metrics import mscoco_rouge
 import numpy as np
 
+import pdb
+
 WER_COST_DEL = 3
 WER_COST_INS = 3
 WER_COST_SUB = 4
@@ -33,6 +35,7 @@ def bleu(references, hypotheses):
     :param references: list of references (strings)
     :return:
     """
+    #pdb.set_trace()
     bleu_scores = sacrebleu.raw_corpus_bleu(
         sys_stream=hypotheses, ref_streams=[references]
     ).scores
@@ -93,7 +96,7 @@ def rouge(references, hypotheses):
 
 def wer_list(references, hypotheses):
     total_error = total_del = total_ins = total_sub = total_ref_len = 0
-
+    #pdb.set_trace()
     for r, h in zip(references, hypotheses):
         res = wer_single(r=r, h=h)
         total_error += res["num_err"]

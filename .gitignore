@@ -10,6 +10,16 @@ sign_sample_model_RL/
 
 sign_sample_model_recog/
 
+debug_delete/
+
+RL_test/
+
+sign_model_bleu/
+
+sign_sample_model_recog_02/
+
+configs/sign.yaml
+
 env/
 
 .idea/

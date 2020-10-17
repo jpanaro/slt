@@ -14,7 +14,7 @@ from signjoey.embeddings import Embeddings, SpatialEmbeddings
 from signjoey.encoders import Encoder, RecurrentEncoder, TransformerEncoder
 from signjoey.decoders import Decoder, RecurrentDecoder, TransformerDecoder
 from signjoey.search import beam_search, greedy
-from signjoey.scoring import get_self_critical_reward, RewardCriterion, init_scorer
+from signjoey.scoring import get_self_critical_reward, RewardCriterion, init_scorer, get_self_critical_reward_bleu
 from signjoey.vocabulary import (
     TextVocabulary,
     GlossVocabulary,
@@ -236,19 +236,20 @@ class SignModel(nn.Module):
             # Calculate Reward
             gen_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=gen_res)
             greedy_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=greedy_res)
-            data_gts = self.txt_vocab.rl_arrays_to_sentences(arrays=batch.txt_input)
-            #pdb.set_trace()
-            reward = get_self_critical_reward(greedy_sentences, data_gts, gen_sentences)
+            data_gts = self.txt_vocab.rl_arrays_to_sentences(arrays=batch.txt_input[:, 1:]) # Special indexing to cut off <s> or BOS token
+            pdb.set_trace()
+            reward = get_self_critical_reward_bleu(greedy_sentences, data_gts, gen_sentences, gen_res.shape[1])
+            reward = get_self_critical_reward(greedy_sentences, data_gts, gen_sentences, gen_res.shape[1])
             #if (output.reshape(-1).shape[0] != reward.reshape(-1).shape[0]):
             #    pdb.set_trace()
             reward = torch.from_numpy(reward).float().to(gen_res.device)
             #pdb.set_trace()
             #############################################################################
-            temp_output = output.gather(2, gen_res.data.unsqueeze(2)).squeeze(2)
-            temp_output_1 = temp_output.reshape(-1)
-            temp_reward = reward.reshape(-1)
-            if (temp_output_1.shape[0] != temp_reward.shape[0]):
-                pdb.set_trace()
+            #temp_output = output.gather(2, gen_res.data.unsqueeze(2)).squeeze(2)
+            #temp_output_1 = temp_output.reshape(-1)
+            #temp_reward = reward.reshape(-1)
+            #if (temp_output_1.shape[0] != temp_reward.shape[0]):
+            #    pdb.set_trace()
             loss = self.rl_criterion(output, gen_res.data, reward)
             loss = loss.mean()
             #pdb.set_trace()
@@ -284,6 +285,9 @@ class SignModel(nn.Module):
                 assert decoder_outputs is not None
                 #pdb.set_trace()
                 word_outputs, _, _, _ = decoder_outputs
+                # TESTING TRIMMING (DOES NOT REALLY DO ANYTHING, SLIGHTLY WORSE)
+                #translation_res = word_outputs.argmax(2)
+                #txt_log_probs = sc_trim(translation_res, word_outputs.clone())
                 # Calculate Translation Loss
                 txt_log_probs = F.log_softmax(word_outputs, dim=-1)
                 translation_loss = (

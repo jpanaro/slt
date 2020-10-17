@@ -3,10 +3,13 @@ data/download.sh
 data/
 
 sign_sample_model/
-
 sign_sample_model_copy/
-
 sign_sample_model_new/
+debug_delete/
+sign_model_bleu/
+sign_sample_model_recog/
+sign_sample_model_recog_02/
+RL_test/
 
 env/
 

@@ -1,0 +1,6 @@
+1. Do I keep LR scheduler for PPO? Probably not
+2. Do I run the reference model with do_recog enabled?
+    (a) We wont have it for the active model or PPO so maybe not?
+3. Commit to a standard logging format.
+    (a) This either means converting all of the PPO related code to Tensorboard
+    (b) Or converting all of the JoeyNMT code to Wandb (maybe Nikunj or Priyanshu already did this?)

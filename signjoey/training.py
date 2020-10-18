@@ -373,7 +373,7 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
-            for batch in iter(train_iter):
+            for batch in iter(train_iter): # This loop is inside default PPOTrainer
                 # reactivate training
                 # create a Batch object from torchtext batch
                 batch = Batch(
@@ -386,6 +386,11 @@ class TrainManager:
                     random_frame_subsampling=self.random_frame_subsampling,
                     random_frame_masking_ratio=self.random_frame_masking_ratio,
                 )
+                ##########################################################################
+                # Probably inject PPO trainer here and bypass self._train_batch() function
+                # when we are running sc_training. Return total PPO loss for tracking
+                # purposes and set it to translation loss
+                ##########################################################################
 
                 # only update every batch_multiplier batches
                 # see https://medium.com/@davidlmorton/
@@ -396,7 +401,9 @@ class TrainManager:
                 recognition_loss, translation_loss = self._train_batch(
                     batch, update=update
                 )
-
+                ##############################################################
+                # translation loss will be PPO sc_loss
+                ##############################################################
                 if self.do_recognition:
                     self.tb_writer.add_scalar(
                         "train/train_recognition_loss", recognition_loss, self.steps
@@ -736,7 +743,13 @@ class TrainManager:
         :return normalized_recognition_loss: Normalized recognition loss
         :return normalized_translation_loss: Normalized translation loss
         """
-
+        ##############################################################################
+        # Once sc_flag is set, disable recognition loss, and only do translation loss
+        # which is now going to be substituted by the loss calculated by PPO
+        # may need to remove loss.backward() in PPOTrainer and just return loss
+        # see which is better
+        # TODO LOSS IS BACKPROPPED IN THIS FUNCTION NORMALLY
+        ##############################################################################
         recognition_loss, translation_loss = self.model.get_loss_for_batch(
             batch=batch,
             recognition_loss_function=self.recognition_loss_function
@@ -992,6 +1005,13 @@ def train(cfg_file: str) -> None:
         do_recognition=do_recognition,
         do_translation=do_translation,
     )
+
+    ################################################################################
+    # Potentially inject building of PPOTrainer here as well as loading of ref_model
+    # We most likely only need a TrainManager for the actual model being trained
+    # We only need to "activate" ref_model and PPOTrainer once the sc_flag
+    # (RL training) starts, otherwise they lay dormant
+    ################################################################################
 
     # for training management, e.g. early stopping and model selection
     trainer = TrainManager(model=model, config=cfg)

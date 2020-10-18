@@ -12,6 +12,7 @@ from signjoey.initialization import initialize_model
 from signjoey.embeddings import Embeddings, SpatialEmbeddings
 from signjoey.encoders import Encoder, RecurrentEncoder, TransformerEncoder
 from signjoey.decoders import Decoder, RecurrentDecoder, TransformerDecoder
+from signjoey.value_head import ValueHead
 from signjoey.search import beam_search, greedy
 from signjoey.vocabulary import (
     TextVocabulary,

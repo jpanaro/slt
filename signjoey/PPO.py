@@ -113,7 +113,10 @@ class PPOTrainer:
         
         t = time.time()
         logprobs, ref_logprobs, values = self.batched_forward_pass(batch)
+        pdb.set_trace()
         timing['time/ppo/forward_pass'] = time.time()-t
+
+        # calculate scores here
 
         t = time.time()
         rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
@@ -176,12 +179,11 @@ class PPOTrainer:
                 txt_input=batch.txt_input[i*fbs:(i+1)*fbs],
                 txt_mask=batch.txt_mask[i*fbs:(i+1)*fbs],
             )
-            pdb.set_trace()
+            #pdb.set_trace()
             logits, _, _, _ = active_decoder_outputs
             ref_logits, _, _, _ = ref_decoder_outputs
-            #logits, _, v = self.model(m_input)
-            #ref_logits, _, _ = self.ref_model(m_input)
-            values.append(v.detach())
+
+            values.append(active_values[:,:-1].detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
    

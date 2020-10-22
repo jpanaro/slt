@@ -4,3 +4,4 @@
 3. Commit to a standard logging format.
     (a) This either means converting all of the PPO related code to Tensorboard
     (b) Or converting all of the JoeyNMT code to Wandb (maybe Nikunj or Priyanshu already did this?)
+4.Why is ValueHead using Identity() for most layers?

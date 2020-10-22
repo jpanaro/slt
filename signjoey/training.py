@@ -402,7 +402,7 @@ class TrainManager:
                     batch, update=update
                 )
                 ##############################################################
-                # translation loss will be PPO sc_loss
+                # translation loss will be PPO rl_loss
                 ##############################################################
                 if self.do_recognition:
                     self.tb_writer.add_scalar(
@@ -1005,7 +1005,7 @@ def train(cfg_file: str) -> None:
         do_recognition=do_recognition,
         do_translation=do_translation,
     )
-
+    #pdb.set_trace()
     ################################################################################
     # Potentially inject building of PPOTrainer here as well as loading of ref_model
     # We most likely only need a TrainManager for the actual model being trained

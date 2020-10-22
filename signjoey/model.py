@@ -25,6 +25,7 @@ from signjoey.batch import Batch
 from signjoey.helpers import freeze_params
 from torch import Tensor
 from typing import Union
+import pdb
 
 
 class SignModel(nn.Module):
@@ -37,6 +38,7 @@ class SignModel(nn.Module):
         encoder: Encoder,
         gloss_output_layer: nn.Module,
         decoder: Decoder,
+        value_head: ValueHead,
         sgn_embed: SpatialEmbeddings,
         txt_embed: Embeddings,
         gls_vocab: GlossVocabulary,
@@ -60,6 +62,7 @@ class SignModel(nn.Module):
 
         self.encoder = encoder
         self.decoder = decoder
+        self.value_head = value_head
 
         self.sgn_embed = sgn_embed
         self.txt_embed = txt_embed
@@ -122,8 +125,12 @@ class SignModel(nn.Module):
             )
         else:
             decoder_outputs = None
+        
+        #pdb.set_trace()
+        # caluculate values from valuehead and return them
+        values = self.value_head(decoder_outputs[1]).squeeze(-1)
 
-        return decoder_outputs, gloss_probabilities
+        return decoder_outputs, gloss_probabilities, values
 
     def encode(
         self, sgn: Tensor, sgn_mask: Tensor, sgn_length: Tensor
@@ -196,7 +203,7 @@ class SignModel(nn.Module):
         # pylint: disable=unused-variable
 
         # Do a forward pass
-        decoder_outputs, gloss_probabilities = self.forward(
+        decoder_outputs, gloss_probabilities, values = self.forward(
             sgn=batch.sgn,
             sgn_mask=batch.sgn_mask,
             sgn_lengths=batch.sgn_lengths,
@@ -435,11 +442,16 @@ def build_model(
     else:
         txt_embed = None
         decoder = None
+    
+    # build valuehead
+    value_head = ValueHead(cfg["valuehead"])
+    #pdb.set_trace()
 
     model: SignModel = SignModel(
         encoder=encoder,
         gloss_output_layer=gloss_output_layer,
         decoder=decoder,
+        value_head=value_head,
         sgn_embed=sgn_embed,
         txt_embed=txt_embed,
         gls_vocab=gls_vocab,

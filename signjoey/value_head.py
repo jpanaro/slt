@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn import Identity
 import torch.nn.functional as F
 from torch import Tensor
+import pdb
 
 class ValueHead(nn.Module):
     """
@@ -12,28 +13,29 @@ class ValueHead(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
+        #pdb.set_trace()
         self.detach_head = False
-        self.summary_type = config.summary_type if hasattr(config, "summary_type") else "last"
+        self.summary_type = config["summary_type"] if "summary_type" in config else "last"
 
         self.summary = Identity()
-        if hasattr(config, "summary_use_proj") and config.summary_use_proj:
-            if hasattr(config, "summary_proj_to_labels") and config.summary_proj_to_labels and config.num_labels > 0:
-                num_classes = config.num_labels
+        if "summary_use_proj" in config and config["summary_use_proj"]:
+            if "summary_proj_to_labels" in config and config["summary_proj_to_labels"] and config["num_labels"] > 0:
+                num_classes = config["num_labels"]
             else:
-                num_classes = config.hidden_size
-            self.summary = nn.Linear(config.hidden_size, num_classes)
+                num_classes = config["hidden_size"]
+            self.summary = nn.Linear(config["hidden_size"], num_classes)
 
         self.activation = Identity()
-        if hasattr(config, "summary_activation") and config.summary_activation == "tanh":
+        if "summary_activation" in config and config["summary_activation"] == "tanh":
             self.activation = nn.Tanh()
         
         self.first_dropout = Identity()
-        if hasattr(config, "summary_first_dropout") and config.summary_first_dropout > 0:
-            self.first_dropout = nn.Dropout(config.summary_first_dropout)
+        if "summary_first_dropout" in config and config["summary_first_dropout"] > 0:
+            self.first_dropout = nn.Dropout(config["summary_first_dropout"])
         
         self.last_dropout = Identity()
-        if hasattr(config, "summary_last_dropout") and config.summary_last_dropout > 0:
-            self.last_dropout = nn.Dropout(config.summary_last_dropout)
+        if "summary_last_dropout" in config and config["summary_last_dropout"] > 0:
+            self.last_dropout = nn.Dropout(config["summary_last_dropout"])
         
         self.flatten = nn.Flatten()
     

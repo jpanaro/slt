@@ -14,6 +14,7 @@ from sys import platform
 from logging import Logger
 from typing import Callable, Optional
 import numpy as np
+import pdb
 
 import torch
 from torch import nn, Tensor
@@ -266,3 +267,32 @@ def symlink_update(target, link_name):
             os.symlink(target, link_name)
         else:
             raise e
+
+def load_reference_model(
+        path: str,
+        temp_model,
+        use_cuda: bool = True
+    ) -> None:
+        """
+        Load a reference model from a checkpoint for usage with PPO
+
+        This checkpoint file contains not only model parameters, but also
+        scheduler and optimizer states, see `self._save_checkpoint`.
+
+        :param path: path to checkpoint
+        :param reset_best_ckpt: reset tracking of the best checkpoint,
+                                use for domain adaptation with a new dev
+                                set or when using a new metric for fine-tuning.
+        :param reset_scheduler: reset the learning rate scheduler, and do not
+                                use the one stored in the checkpoint.
+        :param reset_optimizer: reset the optimizer, and do not use the one
+                                stored in the checkpoint.
+        """
+        model_checkpoint = load_checkpoint(path=path, use_cuda=use_cuda)
+        # restore model parameters and set to evaluation mode
+        temp_model.load_state_dict(model_checkpoint["model_state"])
+        temp_model.eval()
+
+        # move parameters to cuda
+        if use_cuda:
+            temp_model.cuda()

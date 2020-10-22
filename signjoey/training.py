@@ -10,6 +10,7 @@ import shutil
 import time
 import queue
 import pdb
+import copy
 
 from signjoey.model import build_model
 from signjoey.batch import Batch
@@ -20,6 +21,7 @@ from signjoey.helpers import (
     load_checkpoint,
     make_model_dir,
     make_logger,
+    load_reference_model,
     set_seed,
     symlink_update,
 )
@@ -31,6 +33,7 @@ from signjoey.builders import build_optimizer, build_scheduler, build_gradient_c
 from signjoey.prediction import test
 from signjoey.metrics import wer_single
 from signjoey.vocabulary import SIL_TOKEN
+from signjoey.PPO import PPOTrainer
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from torchtext.data import Dataset
@@ -50,6 +53,7 @@ class TrainManager:
         :param config: dictionary containing the training configurations
         """
         train_config = config["training"]
+        self.config_copy = config
 
         # files for logging and storing
         self.model_dir = make_model_dir(
@@ -355,6 +359,13 @@ class TrainManager:
             shuffle=self.shuffle,
         )
         epoch_no = None
+
+        # Load reference model for PPO trainer
+        model_load_path = self.config_copy["training"]["reference_model"]
+        ref_model = copy.deepcopy(self.model)
+        load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
+        ppo_trainer = PPOTrainer(self.model, ref_model) # Using default_params so pass 'None'
+
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
 
@@ -373,6 +384,7 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
+            total_loss = 0 # Accumulates loss and then backprops once batch_cap is reached
             for batch in iter(train_iter): # This loop is inside default PPOTrainer
                 # reactivate training
                 # create a Batch object from torchtext batch
@@ -391,6 +403,9 @@ class TrainManager:
                 # when we are running sc_training. Return total PPO loss for tracking
                 # purposes and set it to translation loss
                 ##########################################################################
+                pdb.set_trace()
+                temp_loss = ppo_trainer.step(batch)
+                total_loss += temp_loss
 
                 # only update every batch_multiplier batches
                 # see https://medium.com/@davidlmorton/

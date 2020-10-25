@@ -361,10 +361,12 @@ class TrainManager:
         epoch_no = None
 
         # Load reference model for PPO trainer
-        model_load_path = self.config_copy["training"]["reference_model"]
-        ref_model = copy.deepcopy(self.model)
-        load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
-        ppo_trainer = PPOTrainer(self.model, ref_model) # Using default_params so pass 'None'
+        #pdb.set_trace()
+        if self.config_copy['training']['use_ppo']:
+            model_load_path = self.config_copy["training"]["reference_model"]
+            ref_model = copy.deepcopy(self.model)
+            load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
+            ppo_trainer = PPOTrainer(self.model, ref_model) # Using default_params so pass 'None'
 
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
@@ -375,7 +377,7 @@ class TrainManager:
             self.model.train()
             start = time.time()
             total_valid_duration = 0
-            count = self.batch_multiplier - 1
+            count = self.batch_multiplier - 1 # By default this is equal to 0 to start
 
             if self.do_recognition:
                 processed_gls_tokens = self.total_gls_tokens
@@ -384,7 +386,6 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
-            total_loss = 0 # Accumulates loss and then backprops once batch_cap is reached
             for batch in iter(train_iter): # This loop is inside default PPOTrainer
                 # reactivate training
                 # create a Batch object from torchtext batch
@@ -403,9 +404,12 @@ class TrainManager:
                 # when we are running sc_training. Return total PPO loss for tracking
                 # purposes and set it to translation loss
                 ##########################################################################
-                pdb.set_trace()
-                temp_loss = ppo_trainer.step(batch)
-                total_loss += temp_loss
+                #pdb.set_trace()
+                if self.config_copy['training']['use_ppo']:
+                    stats = ppo_trainer.step(batch)
+                    translation_loss = stats['ppo/loss/total']
+                    pdb.set_trace()
+                    self.steps = 100 # Starting with validating every batch, this is probably a mistake lol
 
                 # only update every batch_multiplier batches
                 # see https://medium.com/@davidlmorton/
@@ -811,7 +815,7 @@ class TrainManager:
 
         if self.clip_grad_fun is not None:
             # clip gradients (in-place)
-            self.clip_grad_fun(params=self.model.parameters())
+            self.clip_grad_fun(params=self.model.parameters())      
 
         if update:
             # make gradient step

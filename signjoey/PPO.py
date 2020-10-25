@@ -17,6 +17,9 @@ from trl.core import (logprobs_from_logits,
                          stack_dicts,
                          add_suffix)
 
+from signjoey.external_metrics import sacrebleu
+from signjoey.helpers import array_to_str
+
 class AdaptiveKLController:
     """
     Adaptive KL controller described in the paper:
@@ -84,7 +87,7 @@ class PPOTrainer:
         
         self.ref_model = ref_model
         self.model = model
-        #self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
+        self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
      
         self.kl_ctl = AdaptiveKLController(self.ppo_params['init_kl_coef'],
                                            self.ppo_params['target'],
@@ -112,32 +115,35 @@ class PPOTrainer:
         #model_input = torch.cat((query, response), axis=1)
         
         t = time.time()
-        logprobs, ref_logprobs, values = self.batched_forward_pass(batch)
-        pdb.set_trace()
+        logprobs, ref_logprobs, values, scores = self.batched_forward_pass(batch)
+        scores = torch.FloatTensor(scores).cuda()
+        #pdb.set_trace()
         timing['time/ppo/forward_pass'] = time.time()-t
 
-        # calculate scores here
+        # calculate scores here (maybe not)
+        #active_text = logprobs.argmax(-1)
 
         t = time.time()
         rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
+        #pdb.set_trace()
         timing['time/ppo/compute_rewards'] = time.time()-t 
         
         t = time.time() 
         all_stats = []
         idxs = list(range(bs))
+        #pdb.set_trace()
         for _ in range(self.ppo_params['ppo_epochs']):
             random.shuffle(idxs)
             for i in range(bs):
                 idx = idxs[i]
                 train_stats = self.train_minibatch(logprobs[idx:idx+1], values[idx:idx+1],
-                                                   rewards[idx:idx+1], query[idx:idx+1],
-                                                   response[idx:idx+1], model_input[idx:idx+1])
+                                                   rewards[idx:idx+1], batch, idx)
                 all_stats.append(train_stats)
         timing['time/ppo/optimize_step'] = time.time()-t
         
         t = time.time()
         train_stats = stack_dicts(all_stats)
-        
+        #pdb.set_trace()
         # reshape advantages/ratios such that they are not averaged.
         train_stats['policy/advantages'] = torch.flatten(train_stats['policy/advantages']).unsqueeze(0)
         train_stats['policy/ratio'] = torch.flatten(train_stats['policy/ratio']).unsqueeze(0)
@@ -183,15 +189,34 @@ class PPOTrainer:
             logits, _, _, _ = active_decoder_outputs
             ref_logits, _, _, _ = ref_decoder_outputs
 
+            # translate each sentence to german
+            #pdb.set_trace()
+            active_res = logits[:,:-1,:].argmax(2)
+            #reference_res = ref_logits[:,:-1,:].argmax(2)
+            active_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=active_res)
+            #reference_sentences = self.ref_model.txt_vocab.arrays_to_sentences(arrays=reference_res)
+            gt_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=m_input[:,1:])
+            # append a bleu-4 score for each sample to the scores array
+            for j in range(fbs):
+                #pdb.set_trace()
+                active_temp = array_to_str(active_sentences[j])
+                #reference_temp = array_to_str(reference_sentences[j])
+                gt_temp = array_to_str(gt_sentences[j])
+                #ref_bleu_temp = sacrebleu.sentence_bleu(reference_temp, gt_temp)
+                bleu_temp = sacrebleu.sentence_bleu(active_temp, gt_temp)
+                #bleu_temp = sacrebleu.sentence_bleu(gt_temp, gt_temp)
+                scores.append(bleu_temp.scores[3])
+                #ref_scores.append(ref_bleu_temp.scores[3])
+
             values.append(active_values[:,:-1].detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
-   
-        return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values)
+        #pdb.set_trace()
+        return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
     
-    def train_minibatch(self, logprobs, values, rewards, query, response, model_input):
+    def train_minibatch(self, logprobs, values, rewards, batch, idx):
         """Train one PPO minibatch"""
-        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, query, response, model_input)
+        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, batch, idx)
         loss = loss_p + loss_v
         self.optimizer.zero_grad()
         loss.backward()
@@ -206,11 +231,13 @@ class PPOTrainer:
         rewards[:, -1] += scores
         return rewards, non_score_reward, self.kl_ctl.value
 
-    def loss(self, old_logprobs, values, rewards, query, response, model_input):
+    def loss(self, old_logprobs, values, rewards, batch, idx):
         """Calculate policy and value losses."""
+        #pdb.set_trace()
         lastgaelam = 0
         advantages_reversed = []
-        gen_len = response.shape[1]
+        model_input = batch.txt_input[idx:idx+1]
+        gen_len = batch.txt_input[idx:idx+1].shape[1]-1
 
         for t in reversed(range(gen_len)):
             nextvalues = values[:, t + 1] if t < gen_len - 1 else 0.0
@@ -218,12 +245,20 @@ class PPOTrainer:
             lastgaelam = delta + self.ppo_params['gamma'] * self.ppo_params['lam'] * lastgaelam
             advantages_reversed.append(lastgaelam)
         advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
-
+        #pdb.set_trace()
         returns = advantages + values
         advantages = whiten(advantages)
         advantages = advantages.detach()
 
-        logits, _, vpred = self.model(model_input)
+        #logits, _, vpred = self.model(model_input)
+        active_decoder_outputs, _, vpred = self.model.forward(
+                sgn=batch.sgn[idx:idx+1],
+                sgn_mask=batch.sgn_mask[idx:idx+1],
+                sgn_lengths=batch.sgn_lengths[idx:idx+1],
+                txt_input=batch.txt_input[idx:idx+1],
+                txt_mask=batch.txt_mask[idx:idx+1],
+            )
+        logits, _, _, _ = active_decoder_outputs
         logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
         
         #only the generation part of the values/logprobs is needed

@@ -296,3 +296,11 @@ def load_reference_model(
         # move parameters to cuda
         if use_cuda:
             temp_model.cuda()
+
+def array_to_str(arr):
+    out = ''
+    for i in range(len(arr)):
+        out += str(arr[i]) + ' '
+        if arr[i] == 0:
+            break
+    return out.strip()

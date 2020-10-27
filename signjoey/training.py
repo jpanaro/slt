@@ -387,7 +387,18 @@ class TrainManager:
             if self.do_translation:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
-
+            pdb.set_trace()
+            batch = next(iter(train_iter))
+            batch = Batch(
+                    is_train=True,
+                    torch_batch=batch,
+                    txt_pad_index=self.txt_pad_index,
+                    sgn_dim=self.feature_size,
+                    use_cuda=self.use_cuda,
+                    frame_subsampling_ratio=self.frame_subsampling_ratio,
+                    random_frame_subsampling=self.random_frame_subsampling,
+                    random_frame_masking_ratio=self.random_frame_masking_ratio,
+                )
             for batch in iter(train_iter):
                 # reactivate training
                 # create a Batch object from torchtext batch
@@ -1069,7 +1080,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-0', project='PPO_Transformer', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-0', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

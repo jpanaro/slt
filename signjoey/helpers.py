@@ -304,3 +304,8 @@ def array_to_str(arr):
         if arr[i] == 0:
             break
     return out.strip()
+
+# Converts score from a range of 0->100 to -4.5->4.5
+def score_conv(score):
+    new_score = ((score * 9.0)/100.0)-4.5
+    return new_score

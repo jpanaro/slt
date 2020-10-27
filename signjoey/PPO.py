@@ -18,7 +18,7 @@ from trl.core import (logprobs_from_logits,
                          add_suffix)
 
 from signjoey.external_metrics import sacrebleu
-from signjoey.helpers import array_to_str
+from signjoey.helpers import array_to_str, score_conv
 
 class AdaptiveKLController:
     """
@@ -59,7 +59,7 @@ class PPOTrainer:
         "ppo_epochs": 4,    
     } 
     
-    def __init__(self, model, ref_model, **ppo_params):
+    def __init__(self, model, ref_model, old_optimizer, **ppo_params):
         """
         Initialize PPOTrainer.
         
@@ -87,7 +87,8 @@ class PPOTrainer:
         
         self.ref_model = ref_model
         self.model = model
-        self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
+        #self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
+        self.optimizer = old_optimizer
      
         self.kl_ctl = AdaptiveKLController(self.ppo_params['init_kl_coef'],
                                            self.ppo_params['target'],
@@ -106,7 +107,7 @@ class PPOTrainer:
         returns:
             train_stats (dict): a summary of the training statistics
         """
-
+        #pdb.set_trace()
         bs = self.ppo_params['batch_size']
         timing = dict()
         t0 = time.time()
@@ -124,6 +125,7 @@ class PPOTrainer:
         #active_text = logprobs.argmax(-1)
 
         t = time.time()
+        #pdb.set_trace()
         rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
         #pdb.set_trace()
         timing['time/ppo/compute_rewards'] = time.time()-t 
@@ -134,11 +136,13 @@ class PPOTrainer:
         #pdb.set_trace()
         for _ in range(self.ppo_params['ppo_epochs']):
             random.shuffle(idxs)
+            #pdb.set_trace()
             for i in range(bs):
                 idx = idxs[i]
-                train_stats = self.train_minibatch(logprobs[idx:idx+1], values[idx:idx+1],
-                                                   rewards[idx:idx+1], batch, idx)
-                all_stats.append(train_stats)
+                if batch.sgn[idx:idx+1].shape[0] != 0:
+                    train_stats = self.train_minibatch(logprobs[idx:idx+1], values[idx:idx+1],
+                                                    rewards[idx:idx+1], batch, idx)
+                    all_stats.append(train_stats)
         timing['time/ppo/optimize_step'] = time.time()-t
         
         t = time.time()
@@ -168,9 +172,11 @@ class PPOTrainer:
         ref_logprobs = []
         values = []
         scores = []
-        
+        #pdb.set_trace()
         for i in range(int(self.ppo_params['batch_size']/fbs)): # 16 times (using 256 bs and 16 fbs)
             m_input = batch.txt_input[i*fbs:(i+1)*fbs] # splits batch into chunks of 16 until 256 is reached
+            if batch.sgn[i*fbs:(i+1)*fbs].shape[0] == 0:
+                break
             active_decoder_outputs, _, active_values = self.model.forward(
                 sgn=batch.sgn[i*fbs:(i+1)*fbs],
                 sgn_mask=batch.sgn_mask[i*fbs:(i+1)*fbs],
@@ -197,7 +203,7 @@ class PPOTrainer:
             #reference_sentences = self.ref_model.txt_vocab.arrays_to_sentences(arrays=reference_res)
             gt_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=m_input[:,1:])
             # append a bleu-4 score for each sample to the scores array
-            for j in range(fbs):
+            for j in range(len(active_sentences)):
                 #pdb.set_trace()
                 active_temp = array_to_str(active_sentences[j])
                 #reference_temp = array_to_str(reference_sentences[j])
@@ -205,7 +211,8 @@ class PPOTrainer:
                 #ref_bleu_temp = sacrebleu.sentence_bleu(reference_temp, gt_temp)
                 bleu_temp = sacrebleu.sentence_bleu(active_temp, gt_temp)
                 #bleu_temp = sacrebleu.sentence_bleu(gt_temp, gt_temp)
-                scores.append(bleu_temp.scores[3])
+                #pdb.set_trace()
+                scores.append(score_conv(bleu_temp.scores[3]))
                 #ref_scores.append(ref_bleu_temp.scores[3])
 
             values.append(active_values[:,:-1].detach())
@@ -218,6 +225,7 @@ class PPOTrainer:
         """Train one PPO minibatch"""
         loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, batch, idx)
         loss = loss_p + loss_v
+        #pdb.set_trace()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -225,6 +233,7 @@ class PPOTrainer:
     
     def compute_rewards(self, scores, logprobs, ref_logprobs):
         """Compute per token rewards from scores and KL-penalty."""
+        #pdb.set_trace()
         kl = logprobs - ref_logprobs
         non_score_reward = -self.kl_ctl.value * kl
         rewards = non_score_reward.clone().detach()
@@ -238,7 +247,8 @@ class PPOTrainer:
         advantages_reversed = []
         model_input = batch.txt_input[idx:idx+1]
         gen_len = batch.txt_input[idx:idx+1].shape[1]-1
-
+        
+        #pdb.set_trace()
         for t in reversed(range(gen_len)):
             nextvalues = values[:, t + 1] if t < gen_len - 1 else 0.0
             delta = rewards[:, t] + self.ppo_params['gamma'] * nextvalues - values[:, t]

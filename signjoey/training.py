@@ -11,6 +11,7 @@ import time
 import queue
 import pdb
 import copy
+import wandb
 
 from signjoey.model import build_model
 from signjoey.batch import Batch
@@ -359,14 +360,15 @@ class TrainManager:
             shuffle=self.shuffle,
         )
         epoch_no = None
-
+        wandb.watch(self.model, log='all')
+        logs = dict()
         # Load reference model for PPO trainer
         #pdb.set_trace()
         if self.config_copy['training']['use_ppo']:
             model_load_path = self.config_copy["training"]["reference_model"]
             ref_model = copy.deepcopy(self.model)
             load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
-            ppo_trainer = PPOTrainer(self.model, ref_model) # Using default_params so pass 'None'
+            ppo_trainer = PPOTrainer(self.model, ref_model, self.optimizer) # Using default_params so pass 'None'
 
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
@@ -386,7 +388,7 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
-            for batch in iter(train_iter): # This loop is inside default PPOTrainer
+            for batch in iter(train_iter):
                 # reactivate training
                 # create a Batch object from torchtext batch
                 batch = Batch(
@@ -399,30 +401,35 @@ class TrainManager:
                     random_frame_subsampling=self.random_frame_subsampling,
                     random_frame_masking_ratio=self.random_frame_masking_ratio,
                 )
-                ##########################################################################
-                # Probably inject PPO trainer here and bypass self._train_batch() function
-                # when we are running sc_training. Return total PPO loss for tracking
-                # purposes and set it to translation loss
-                ##########################################################################
                 #pdb.set_trace()
                 if self.config_copy['training']['use_ppo']:
                     stats = ppo_trainer.step(batch)
-                    translation_loss = stats['ppo/loss/total']
                     pdb.set_trace()
-                    self.steps = 100 # Starting with validating every batch, this is probably a mistake lol
+                    logs.update(stats)
+                    wandb.log(logs)
+                    translation_loss = torch.tensor(stats['ppo/loss/total']/4) # Since ppo_epochs = 4
+                    recognition_loss = 0
+                    if self.clip_grad_fun is not None: # Might not need, just here to be safe
+                        # clip gradients (in-place)
+                        self.clip_grad_fun(params=self.model.parameters()) 
+                    if self.do_recognition:
+                        self.total_gls_tokens += batch.num_gls_tokens
+                    if self.do_translation:
+                        self.total_txt_tokens += batch.num_txt_tokens
+                    self.steps += 25 # Starting with validating every ~8th batch, this is probably a mistake lol
 
                 # only update every batch_multiplier batches
                 # see https://medium.com/@davidlmorton/
                 # increasing-mini-batch-size-without-increasing-
                 # memory-6794e10db672
+                #pdb.set_trace()
                 update = count == 0
 
-                recognition_loss, translation_loss = self._train_batch(
-                    batch, update=update
-                )
-                ##############################################################
-                # translation loss will be PPO rl_loss
-                ##############################################################
+                if self.config_copy['training']['use_ppo'] == False:
+                    recognition_loss, translation_loss = self._train_batch(
+                        batch, update=update
+                    )
+                    #pdb.set_trace()
                 if self.do_recognition:
                     self.tb_writer.add_scalar(
                         "train/train_recognition_loss", recognition_loss, self.steps
@@ -467,8 +474,10 @@ class TrainManager:
                     if self.do_translation:
                         elapsed_txt_tokens = (
                             self.total_txt_tokens - processed_txt_tokens
-                        )
+                        ) 
                         processed_txt_tokens = self.total_txt_tokens
+                        if self.config_copy['training']['use_ppo']:
+                            translation_loss = translation_loss.item()
                         log_out += "Batch Translation Loss: {:10.6f} => ".format(
                             translation_loss
                         )
@@ -607,7 +616,8 @@ class TrainManager:
 
                         if prev_lr != now_lr:
                             if self.last_best_lr != prev_lr:
-                                self.stop = True
+                                pass
+                                #self.stop = True # temp disable of stoping logic
 
                     # append to validation report
                     self._add_report(
@@ -1059,6 +1069,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
+    wandb.init(name=cfg['training']['model_dir']+'_run-0', project='PPO_Transformer', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

@@ -21,6 +21,7 @@ from torch import nn, Tensor
 from torchtext.data import Dataset
 import yaml
 from signjoey.vocabulary import GlossVocabulary, TextVocabulary
+from transformers import top_k_top_p_filtering
 
 
 def make_model_dir(model_dir: str, overwrite: bool = False) -> str:
@@ -309,3 +310,9 @@ def array_to_str(arr):
 def score_conv(score):
     new_score = ((score * 9.0)/100.0)-4.5
     return new_score
+
+# Performs top_p_top_k filtering on all logits in a batch
+def filter_logits(logits):
+    logit_len = logits.shape[1]
+    for i in range(logit_len):
+        logits[:, i, :] = top_k_top_p_filtering(logits[:, i, :], top_k=0, top_p=1.0)

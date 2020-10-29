@@ -18,7 +18,7 @@ from trl.core import (logprobs_from_logits,
                          add_suffix)
 
 from signjoey.external_metrics import sacrebleu
-from signjoey.helpers import array_to_str, score_conv
+from signjoey.helpers import array_to_str, score_conv, filter_logits
 
 class AdaptiveKLController:
     """
@@ -110,6 +110,7 @@ class PPOTrainer:
         #pdb.set_trace()
         bs = self.ppo_params['batch_size']
         timing = dict()
+        logs = dict()
         t0 = time.time()
         
         #gen_len = response.shape[1]
@@ -161,7 +162,12 @@ class PPOTrainer:
         self.kl_ctl.update(stats['objective/kl'], self.ppo_params['batch_size'])
 
         timing['time/ppo/total'] = time.time()-t0
+        # Record reward mean
+        logs['env/reward_mean'] = torch.mean(rewards).cpu().numpy()
+        logs['env/reward_std'] = torch.std(rewards).cpu().numpy()
+        logs['env/reward_dist'] = rewards.cpu().numpy()
         stats.update(timing)
+        stats.update(logs)
         return stats
 
     def batched_forward_pass(self, batch):
@@ -175,7 +181,7 @@ class PPOTrainer:
         #pdb.set_trace()
         for i in range(int(self.ppo_params['batch_size']/fbs)): # 16 times (using 256 bs and 16 fbs)
             m_input = batch.txt_input[i*fbs:(i+1)*fbs] # splits batch into chunks of 16 until 256 is reached
-            if batch.sgn[i*fbs:(i+1)*fbs].shape[0] == 0:
+            if batch.sgn[i*fbs:(i+1)*fbs].shape[0] == 0: # Some batches had nothing in them, need to skip those
                 break
             active_decoder_outputs, _, active_values = self.model.forward(
                 sgn=batch.sgn[i*fbs:(i+1)*fbs],
@@ -191,13 +197,17 @@ class PPOTrainer:
                 txt_input=batch.txt_input[i*fbs:(i+1)*fbs],
                 txt_mask=batch.txt_mask[i*fbs:(i+1)*fbs],
             )
-            #pdb.set_trace()
+            # Get logits
+            pdb.set_trace()
             logits, _, _, _ = active_decoder_outputs
             ref_logits, _, _, _ = ref_decoder_outputs
+            # Filter the logits
+            filter_logits(logits)
+            filter_logits(ref_logits)
 
             # translate each sentence to german
             #pdb.set_trace()
-            active_res = logits[:,:-1,:].argmax(2)
+            active_res = logits[:,:-1,:].argmax(2) # Maybe do respond_to_batch() from iwerratrl here
             #reference_res = ref_logits[:,:-1,:].argmax(2)
             active_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=active_res)
             #reference_sentences = self.ref_model.txt_vocab.arrays_to_sentences(arrays=reference_res)

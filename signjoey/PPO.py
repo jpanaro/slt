@@ -198,12 +198,12 @@ class PPOTrainer:
                 txt_mask=batch.txt_mask[i*fbs:(i+1)*fbs],
             )
             # Get logits
-            pdb.set_trace()
+            #pdb.set_trace()
             logits, _, _, _ = active_decoder_outputs
             ref_logits, _, _, _ = ref_decoder_outputs
-            # Filter the logits
-            filter_logits(logits)
-            filter_logits(ref_logits)
+            # Filter the logits (needs to be done in decoder probably)
+            #filter_logits(logits)
+            #filter_logits(ref_logits)
 
             # translate each sentence to german
             #pdb.set_trace()

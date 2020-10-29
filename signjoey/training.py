@@ -585,7 +585,7 @@ class TrainManager:
                 and self.scheduler_step_at == "validation"
             ):
                 prev_lr = self.scheduler.optimizer.param_groups[0]["lr"]
-                self.scheduler.step(ckpt_score)
+                self.scheduler.step(ckpt_score) # consider commenting out
                 now_lr = self.scheduler.optimizer.param_groups[0]["lr"]
 
                 if prev_lr != now_lr:
@@ -1042,7 +1042,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-1', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-2', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

@@ -86,7 +86,9 @@ class PPOTrainer:
         self.ppo_params.update(ppo_params)
         
         self.ref_model = ref_model
+        #self.ref_model.eval()
         self.model = model
+        #self.model.eval()
         #self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
         self.optimizer = old_optimizer
      
@@ -112,6 +114,10 @@ class PPOTrainer:
         timing = dict()
         logs = dict()
         t0 = time.time()
+
+        #pdb.set_trace()
+        self.model.eval()
+        self.ref_model.eval()
         
         #gen_len = response.shape[1]
         #model_input = torch.cat((query, response), axis=1)
@@ -126,7 +132,7 @@ class PPOTrainer:
         #active_text = logprobs.argmax(-1)
 
         t = time.time()
-        #pdb.set_trace()
+        pdb.set_trace()
         rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
         #pdb.set_trace()
         timing['time/ppo/compute_rewards'] = time.time()-t 
@@ -202,8 +208,9 @@ class PPOTrainer:
             logits, _, _, _ = active_decoder_outputs
             ref_logits, _, _, _ = ref_decoder_outputs
             # Filter the logits (needs to be done in decoder probably)
-            #filter_logits(logits)
-            #filter_logits(ref_logits)
+            #pdb.set_trace()
+            filter_logits(logits)
+            filter_logits(ref_logits)
 
             # translate each sentence to german
             #pdb.set_trace()
@@ -224,7 +231,7 @@ class PPOTrainer:
                 #pdb.set_trace()
                 scores.append(score_conv(bleu_temp.scores[3]))
                 #ref_scores.append(ref_bleu_temp.scores[3])
-
+            pdb.set_trace()
             values.append(active_values[:,:-1].detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
@@ -235,7 +242,6 @@ class PPOTrainer:
         """Train one PPO minibatch"""
         loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, batch, idx)
         loss = loss_p + loss_v
-        #pdb.set_trace()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -243,8 +249,8 @@ class PPOTrainer:
     
     def compute_rewards(self, scores, logprobs, ref_logprobs):
         """Compute per token rewards from scores and KL-penalty."""
-        #pdb.set_trace()
         kl = logprobs - ref_logprobs
+        pdb.set_trace()
         non_score_reward = -self.kl_ctl.value * kl
         rewards = non_score_reward.clone().detach()
         rewards[:, -1] += scores
@@ -257,6 +263,10 @@ class PPOTrainer:
         advantages_reversed = []
         model_input = batch.txt_input[idx:idx+1]
         gen_len = batch.txt_input[idx:idx+1].shape[1]-1
+        
+        ###################################################
+        # Potentially filter logprobs here.
+        ###################################################
         
         #pdb.set_trace()
         for t in reversed(range(gen_len)):
@@ -279,6 +289,7 @@ class PPOTrainer:
                 txt_mask=batch.txt_mask[idx:idx+1],
             )
         logits, _, _, _ = active_decoder_outputs
+        filter_logits(logits)
         logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
         
         #only the generation part of the values/logprobs is needed

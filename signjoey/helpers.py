@@ -292,7 +292,7 @@ def load_reference_model(
         model_checkpoint = load_checkpoint(path=path, use_cuda=use_cuda)
         # restore model parameters and set to evaluation mode
         temp_model.load_state_dict(model_checkpoint["model_state"])
-        temp_model.eval()
+        #temp_model.eval()
 
         # move parameters to cuda
         if use_cuda:
@@ -314,5 +314,31 @@ def score_conv(score):
 # Performs top_p_top_k filtering on all logits in a batch
 def filter_logits(logits):
     logit_len = logits.shape[1]
+    batch_size = logits.shape[0]
+    # Perform top_k_top_p filtering
     for i in range(logit_len):
         logits[:, i, :] = top_k_top_p_filtering(logits[:, i, :], top_k=0, top_p=1.0)
+    # Set logits after first eos token to 0
+    active_res = logits.argmax(2)
+    batch_size = active_res.shape[0]
+    for j in range(batch_size):
+        eos_hit = 0
+        for k in range(logit_len):
+            if eos_hit == 1:
+                logits[j][k] = 0
+            if active_res[j][k] == 3:
+                eos_hit = 1
+
+def compare_models(model_1, model_2):
+    models_differ = 0
+    for key_item_1, key_item_2 in zip(model_1.state_dict().items(), model_2.state_dict().items()):
+        if torch.equal(key_item_1[1], key_item_2[1]):
+            pass
+        else:
+            models_differ += 1
+            if (key_item_1[0] == key_item_2[0]):
+                print('Mismatch found at', key_item_1[0])
+            else:
+                raise Exception
+    if models_differ == 0:
+        print('Models match perfectly! :)')

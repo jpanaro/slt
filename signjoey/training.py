@@ -24,6 +24,7 @@ from signjoey.helpers import (
     make_logger,
     load_reference_model,
     set_seed,
+    compare_models,
     symlink_update,
 )
 from signjoey.model import SignModel
@@ -46,7 +47,7 @@ class TrainManager:
     """ Manages training loop, validations, learning rate scheduling
     and early stopping."""
 
-    def __init__(self, model: SignModel, config: dict) -> None:
+    def __init__(self, model: SignModel, ref_model: SignModel, config: dict) -> None:
         """
         Creates a new TrainManager for a model, specified as in configuration.
 
@@ -75,6 +76,7 @@ class TrainManager:
 
         # model
         self.model = model
+        self.ref_model = ref_model
         self.txt_pad_index = self.model.txt_pad_index
         self.txt_bos_index = self.model.txt_bos_index
         self._log_parameters_list()
@@ -170,6 +172,7 @@ class TrainManager:
         self.use_cuda = train_config["use_cuda"]
         if self.use_cuda:
             self.model.cuda()
+            self.ref_model.cuda()
             if self.do_translation:
                 self.translation_loss_function.cuda()
             if self.do_recognition:
@@ -314,6 +317,7 @@ class TrainManager:
 
         # restore model and optimizer parameters
         self.model.load_state_dict(model_checkpoint["model_state"])
+        self.ref_model.load_state_dict(model_checkpoint["model_state"])
 
         if not reset_optimizer:
             self.optimizer.load_state_dict(model_checkpoint["optimizer_state"])
@@ -344,6 +348,7 @@ class TrainManager:
         # move parameters to cuda
         if self.use_cuda:
             self.model.cuda()
+            self.ref_model.cuda()
 
     def train_and_validate(self, train_data: Dataset, valid_data: Dataset) -> None:
         """
@@ -361,14 +366,28 @@ class TrainManager:
         )
         epoch_no = None
         wandb.watch(self.model, log='all')
+        wandb.save('./PPO.py')
         logs = dict()
         # Load reference model for PPO trainer
         #pdb.set_trace()
         if self.config_copy['training']['use_ppo']:
-            model_load_path = self.config_copy["training"]["reference_model"]
-            ref_model = copy.deepcopy(self.model)
-            load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
-            ppo_trainer = PPOTrainer(self.model, ref_model, self.optimizer) # Using default_params so pass 'None'
+            #pdb.set_trace()
+            # compare_models(self.model, self.ref_model)
+            # for p1, p2 in zip(self.model.parameters(), self.ref_model.parameters()):
+            #     if p1.data.ne(p2.data).sum() > 0:
+            #         print("MISMATCH")
+            #pdb.set_trace()
+            # print("REGULAR_MODEL##################")
+            # for param in self.model.parameters():
+            #     print(param.name, param.data)
+            # print("REFERENCE_MODEL##################")
+            # for param in self.ref_model.parameters():
+            #     print(param.name, param.data)
+            #pdb.set_trace()
+            #model_load_path = self.config_copy["training"]["reference_model"]
+            #ref_model = copy.deepcopy(self.model)
+            #load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
+            ppo_trainer = PPOTrainer(self.model, self.ref_model, self.optimizer) # Using default_params so pass 'None'
 
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
@@ -377,6 +396,7 @@ class TrainManager:
             #    self.scheduler.step(epoch=epoch_no)
 
             self.model.train()
+            self.ref_model.train()
             start = time.time()
             total_valid_duration = 0
             count = self.batch_multiplier - 1 # By default this is equal to 0 to start
@@ -510,7 +530,7 @@ class TrainManager:
                 else None,
                 frame_subsampling_ratio=self.frame_subsampling_ratio,
             )
-            self.model.train()
+            #self.model.train()
 
             if self.do_recognition:
                 # Log Losses and ppl
@@ -585,7 +605,7 @@ class TrainManager:
                 and self.scheduler_step_at == "validation"
             ):
                 prev_lr = self.scheduler.optimizer.param_groups[0]["lr"]
-                self.scheduler.step(ckpt_score) # consider commenting out
+                #self.scheduler.step(ckpt_score) # consider commenting out
                 now_lr = self.scheduler.optimizer.param_groups[0]["lr"]
 
                 if prev_lr != now_lr:
@@ -997,7 +1017,19 @@ def train(cfg_file: str) -> None:
     # build model and load parameters into it
     do_recognition = cfg["training"].get("recognition_loss_weight", 1.0) > 0.0
     do_translation = cfg["training"].get("translation_loss_weight", 1.0) > 0.0
+
     model = build_model(
+        cfg=cfg["model"],
+        gls_vocab=gls_vocab,
+        txt_vocab=txt_vocab,
+        sgn_dim=sum(cfg["data"]["feature_size"])
+        if isinstance(cfg["data"]["feature_size"], list)
+        else cfg["data"]["feature_size"],
+        do_recognition=do_recognition,
+        do_translation=do_translation,
+    )
+
+    ref_model = build_model(
         cfg=cfg["model"],
         gls_vocab=gls_vocab,
         txt_vocab=txt_vocab,
@@ -1016,7 +1048,7 @@ def train(cfg_file: str) -> None:
     ################################################################################
 
     # for training management, e.g. early stopping and model selection
-    trainer = TrainManager(model=model, config=cfg)
+    trainer = TrainManager(model=model, ref_model=ref_model, config=cfg)
 
     # store copy of original training config in model dir
     shutil.copy2(cfg_file, trainer.model_dir + "/config.yaml")
@@ -1042,7 +1074,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-2', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-4', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

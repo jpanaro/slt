@@ -366,7 +366,10 @@ class TrainManager:
         )
         epoch_no = None
         wandb.watch(self.model, log='all')
-        wandb.save('./PPO.py')
+        #wandb.save('PPO.py')
+        #wandb.save(os.path.join(wandb.run.dir, "./PPO.py")) # these do not save files how I want
+        wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/PPO.py')
+        wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/training.py')
         logs = dict()
         # Load reference model for PPO trainer
         #pdb.set_trace()
@@ -1074,7 +1077,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-4', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-10', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

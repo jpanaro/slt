@@ -318,16 +318,19 @@ def filter_logits(logits):
     # Perform top_k_top_p filtering
     for i in range(logit_len):
         logits[:, i, :] = top_k_top_p_filtering(logits[:, i, :], top_k=0, top_p=1.0)
-    # Set logits after first eos token to 0
-    active_res = logits.argmax(2)
-    batch_size = active_res.shape[0]
-    for j in range(batch_size):
-        eos_hit = 0
-        for k in range(logit_len):
-            if eos_hit == 1:
-                logits[j][k] = 0
-            if active_res[j][k] == 3:
-                eos_hit = 1
+    # # Set logits after first eos token to 0
+    # active_res = logits.argmax(2)
+    # batch_size = active_res.shape[0]
+    # for j in range(batch_size):
+    #     eos_hit = 0
+    #     for k in range(logit_len):
+    #         if eos_hit == 1:
+    #             logits[j][k] = 0
+    #         if active_res[j][k] == 3:
+    #             eos_hit = 1
+
+def filter_logprobs(logrpobs):
+    pass
 
 def compare_models(model_1, model_2):
     models_differ = 0

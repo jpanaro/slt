@@ -132,7 +132,7 @@ class PPOTrainer:
         #active_text = logprobs.argmax(-1)
 
         t = time.time()
-        pdb.set_trace()
+        #pdb.set_trace()
         rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
         #pdb.set_trace()
         timing['time/ppo/compute_rewards'] = time.time()-t 
@@ -209,14 +209,29 @@ class PPOTrainer:
             ref_logits, _, _, _ = ref_decoder_outputs
             # Filter the logits (needs to be done in decoder probably)
             #pdb.set_trace()
-            filter_logits(logits)
-            filter_logits(ref_logits)
+            #probs_0 = F.log_softmax(logits[:,:-1,:])
+            #filter_logits(logits)
+            #filter_logits(ref_logits)
+            #probs = F.log_softmax(logits[:,:-1,:])
+            #ref_probs = F.log_softmax(ref_logits[:,:-1,:])
+            #pr = logprobs_from_logits(logits[:,:-1,:], m_input[:,1:])
+            #temp_res = probs.argmax(2)
+            #pdb.set_trace()
+            #temp_res = probs[:, :-1, :].argmax(2)
+            #tokens = torch.multinomial(probs[0], num_samples=1)
+            #pdb.set_trace()
 
             # translate each sentence to german
             #pdb.set_trace()
-            active_res = logits[:,:-1,:].argmax(2) # Maybe do respond_to_batch() from iwerratrl here
+            #active_res = torch.distributions.Categorical(logits=logits[:,:-1,:].detach()).sample()
+            #ref_res = torch.distributions.Categorical(logits=ref_logits[:,:-1,:].detach()).sample()
+            #active_res = logits[:,:-1,:].argmax(2) # Maybe do respond_to_batch() from iwerratrl here
+            active_res = logits.argmax(2)
+            ref_res = ref_logits.argmax(2)
+            #ref_res = ref_logits[:,:-1,:].argmax(2)
+            #pdb.set_trace()
             #reference_res = ref_logits[:,:-1,:].argmax(2)
-            active_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=active_res)
+            active_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=active_res[:,1:])
             #reference_sentences = self.ref_model.txt_vocab.arrays_to_sentences(arrays=reference_res)
             gt_sentences = self.model.txt_vocab.arrays_to_sentences(arrays=m_input[:,1:])
             # append a bleu-4 score for each sample to the scores array
@@ -231,10 +246,14 @@ class PPOTrainer:
                 #pdb.set_trace()
                 scores.append(score_conv(bleu_temp.scores[3]))
                 #ref_scores.append(ref_bleu_temp.scores[3])
-            pdb.set_trace()
+            #pdb.set_trace()
             values.append(active_values[:,:-1].detach())
-            logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
-            ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
+            #logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
+            logprobs.append(logprobs_from_logits(logits[:,:-1,:], active_res[:,1:]).detach())
+            #logprobs.append(probs.detach())
+            #ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
+            ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], ref_res[:,1:]).detach())
+            #ref_logprobs.append(ref_probs.detach())
         #pdb.set_trace()
         return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
     
@@ -250,7 +269,7 @@ class PPOTrainer:
     def compute_rewards(self, scores, logprobs, ref_logprobs):
         """Compute per token rewards from scores and KL-penalty."""
         kl = logprobs - ref_logprobs
-        pdb.set_trace()
+        #pdb.set_trace()
         non_score_reward = -self.kl_ctl.value * kl
         rewards = non_score_reward.clone().detach()
         rewards[:, -1] += scores
@@ -261,13 +280,14 @@ class PPOTrainer:
         #pdb.set_trace()
         lastgaelam = 0
         advantages_reversed = []
-        model_input = batch.txt_input[idx:idx+1]
+        m_input = batch.txt_input[idx:idx+1]
         gen_len = batch.txt_input[idx:idx+1].shape[1]-1
         
         ###################################################
         # Potentially filter logprobs here.
         ###################################################
-        
+        #pdb.set_trace()
+
         #pdb.set_trace()
         for t in reversed(range(gen_len)):
             nextvalues = values[:, t + 1] if t < gen_len - 1 else 0.0
@@ -289,10 +309,15 @@ class PPOTrainer:
                 txt_mask=batch.txt_mask[idx:idx+1],
             )
         logits, _, _, _ = active_decoder_outputs
-        filter_logits(logits)
-        logprob = logprobs_from_logits(logits[:,:-1,:], model_input[:, 1:])
+        #filter_logits(logits)
+        #active_res = logits[:,:-1,:].argmax(2)
+        active_res = logits.argmax(2)
+        #active_res = torch.distributions.Categorical(logits=logits[:,:-1,:].detach()).sample()
+        logprob = logprobs_from_logits(logits[:,:-1,:], active_res[:, 1:])
+        #logprob = logprobs_from_logits(logits[:,:-1,:], m_input[:,1:])
         
         #only the generation part of the values/logprobs is needed
+        #pdb.set_trace()
         logprob, vpred = logprob[:, -gen_len:], vpred[:,-gen_len-1:-1]
 
         vpredclipped = clip_by_value(vpred,

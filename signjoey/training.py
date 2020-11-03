@@ -414,6 +414,7 @@ class TrainManager:
             #pdb.set_trace()
             # Grab next batch from iterator
             batch = next(iter(train_iter))
+            #batch= next()
             batch = Batch(
                     is_train=True,
                     torch_batch=batch,
@@ -1077,7 +1078,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-10', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-15', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

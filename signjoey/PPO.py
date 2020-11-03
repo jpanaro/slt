@@ -6,6 +6,8 @@ import collections
 import time
 import random
 import pdb
+from nltk.translate.bleu_score import sentence_bleu
+from statistics import mean
 
 from trl.core import (logprobs_from_logits,
                          whiten,
@@ -56,7 +58,7 @@ class PPOTrainer:
         "vf_coef":.1,
         "batch_size": 256, # Always make sure this batch size matches config batch size, default 256
         "forward_batch_size": 16, # TODO abstract this config to TrainManager, default 16
-        "ppo_epochs": 4,    
+        "ppo_epochs": 4, # Normally 4
     } 
     
     def __init__(self, model, ref_model, old_optimizer, **ppo_params):
@@ -125,6 +127,7 @@ class PPOTrainer:
         t = time.time()
         logprobs, ref_logprobs, values, scores = self.batched_forward_pass(batch)
         scores = torch.FloatTensor(scores).cuda()
+        logs['env/avg_scores'] = torch.mean(scores).cpu().numpy()
         #pdb.set_trace()
         timing['time/ppo/forward_pass'] = time.time()-t
 
@@ -184,6 +187,7 @@ class PPOTrainer:
         ref_logprobs = []
         values = []
         scores = []
+        pre_scores = [] # JUST FOR DEBUGGING
         #pdb.set_trace()
         for i in range(int(self.ppo_params['batch_size']/fbs)): # 16 times (using 256 bs and 16 fbs)
             m_input = batch.txt_input[i*fbs:(i+1)*fbs] # splits batch into chunks of 16 until 256 is reached
@@ -210,7 +214,7 @@ class PPOTrainer:
             # Filter the logits (needs to be done in decoder probably)
             #pdb.set_trace()
             #probs_0 = F.log_softmax(logits[:,:-1,:])
-            #filter_logits(logits)
+            #filter_logits(logits) Filtering does nothing
             #filter_logits(ref_logits)
             #probs = F.log_softmax(logits[:,:-1,:])
             #ref_probs = F.log_softmax(ref_logits[:,:-1,:])
@@ -241,12 +245,15 @@ class PPOTrainer:
                 #reference_temp = array_to_str(reference_sentences[j])
                 gt_temp = array_to_str(gt_sentences[j])
                 #ref_bleu_temp = sacrebleu.sentence_bleu(reference_temp, gt_temp)
+                test_bleu = sentence_bleu([gt_sentences[j]], active_sentences[j], weights=(0, 0, 0, 1))
                 bleu_temp = sacrebleu.sentence_bleu(active_temp, gt_temp)
                 #bleu_temp = sacrebleu.sentence_bleu(gt_temp, gt_temp)
                 #pdb.set_trace()
+                pre_scores.append(bleu_temp.scores[3])
                 scores.append(score_conv(bleu_temp.scores[3]))
+                #scores.append(bleu_temp.scores[3])
                 #ref_scores.append(ref_bleu_temp.scores[3])
-            #pdb.set_trace()
+            pdb.set_trace()
             values.append(active_values[:,:-1].detach())
             #logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], active_res[:,1:]).detach())
@@ -255,6 +262,7 @@ class PPOTrainer:
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], ref_res[:,1:]).detach())
             #ref_logprobs.append(ref_probs.detach())
         #pdb.set_trace()
+        print("Mean of Training BLEU-4 Scores: " + str(mean(pre_scores)) + '\r\n')
         return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
     
     def train_minibatch(self, logprobs, values, rewards, batch, idx):

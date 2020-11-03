@@ -306,9 +306,15 @@ def array_to_str(arr):
             break
     return out.strip()
 
-# Converts score from a range of 0->100 to -4.5->4.5
+# Converts score from a range of 90->100 to -4.5->4.5 and 60->89 to 0
+# Lets try 80-100 next
 def score_conv(score):
-    new_score = ((score * 9.0)/100.0)-4.5
+    if score >= 80:
+        #new_score = (((score - 90.0)*9.0)/10.0)-4.5 # for 90->100
+        new_score = (((score - 80.0)*9.0)/20.0)-4.5
+    else:
+        new_score = 0.0 # Normally -4.0
+    #new_score = (((score * 9.0)/100.0)-4.5
     return new_score
 
 # Performs top_p_top_k filtering on all logits in a batch

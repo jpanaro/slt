@@ -262,7 +262,7 @@ class PPOTrainer:
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], ref_res[:,1:]).detach())
             #ref_logprobs.append(ref_probs.detach())
         #pdb.set_trace()
-        print("Mean of Training BLEU-4 Scores: " + str(mean(pre_scores)) + '\r\n')
+        print("\r\nMean of Training BLEU-4 Scores: " + str(mean(pre_scores)) + '\r\n')
         return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
     
     def train_minibatch(self, logprobs, values, rewards, batch, idx):

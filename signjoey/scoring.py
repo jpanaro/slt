@@ -9,6 +9,7 @@ from collections import OrderedDict
 from signjoey.tools import torch_to_list, array_to_str, list_to_string
 from nltk.translate.bleu_score import sentence_bleu
 from signjoey.metrics import wer_list, bleu
+import wandb
 
 import sys
 try:
@@ -97,15 +98,15 @@ def get_self_critical_reward(greedy_res, data_gts, gen_result, factor):
 
     #pdb.set_trace()
 
-    avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
+    avg_score, cider_scores = CiderD_scorer.compute_score(gts_, res_)
 
     scores = cider_scores
-    #pdb.set_trace()
+    wandb.log({'train/avg_CIDEr_score': avg_score})
     scores = scores[:gen_res_size].reshape(batch_size, seq_per_img) - scores[-batch_size:][:, np.newaxis]
     scores = scores.reshape(gen_res_size)
     #rewards = np.repeat(scores[:, np.newaxis], max(map(len, gen_result)), 1)
     rewards = np.repeat(scores[:, np.newaxis], factor, 1)
-    #########################################3
+    ##########################################
     #pdb.set_trace()
     #if rewards.shape[1] != max(map(len, gen_result)):
     #    pdb.set_trace()
@@ -173,29 +174,49 @@ def get_self_critical_reward_bleu(greedy_res, data_gts, gen_result, factor):
     return rewards
 
 # Calculates the CIDEr score for a batch of sentences
-def calc_batch_cider(hyp, ref, vocab_dict, config):
-    batch_size = config['batch_size']
-    gen_res_size = hyp.shape[0]
-    seq_per_img = gen_res_size // len(ref)
+def calc_batch_cider(hyp, ref):
+    #batch_size = config['batch_size']
+    #gen_res_size = hyp.shape[0]
+    #seq_per_img = gen_res_size // len(ref)
 
-    hyp_decode = torch_to_list(hyp, vocab_dict, config)
-    gt_decode = torch_to_list(ref, vocab_dict, config)
-
+    #hyp_decode = torch_to_list(hyp, vocab_dict, config)
+    #gt_decode = torch_to_list(ref, vocab_dict, config)
+    #pdb.set_trace()
     res = OrderedDict()
-    for i in range(gen_res_size): # Put both captions into ordered dict
-        res[i] = [array_to_str(hyp_decode[i][1:])]
+    for i in range(len(hyp)): # Put both captions into ordered dict
+        res[i] = [array_to_str(hyp[i][1:])]
     
     gts = OrderedDict() # Put gts into similar format ordered dict
-    for i in range(batch_size):
-        gts[i] = [array_to_str(gt_decode[i])]# for j in range(len(data_gts[i]))]
+    for i in range(len(ref)):
+        gts[i] = [array_to_str(ref[i])]# for j in range(len(data_gts[i]))]
 
     res_ = [{'image_id':i, 'caption': res[i]} for i in range(len(res))]
-    gts_ = {i: gts[i // seq_per_img] for i in range(gen_res_size)}
+    gts_ = {i: gts[i] for i in range(len(res))}
 
     #pdb.set_trace()
     avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
 
-    return avg_scores # used to be *100
+    return avg_scores*100 # used to be *100
+
+def cider(references, hypotheses):
+    """
+    Calculates CIDEr-d score for batch of sentences.
+    """
+    res = OrderedDict()
+    for i in range(len(references)):
+        res[i] = [hypotheses[i]]
+    
+    gts = OrderedDict()
+    for j in range(len(references)):
+        gts[j] = [references[j]]
+    
+    res_ = [{'image_id':i, 'caption': res[i]} for i in range(len(res))]
+    gts_ = {i: gts[i] for i in range(len(references))}
+
+    #pdb.set_trace()
+    avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
+
+    return avg_scores*100
 
 class RewardCriterion(nn.Module):
     def __init__(self):

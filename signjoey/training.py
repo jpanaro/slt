@@ -10,6 +10,7 @@ import shutil
 import time
 import queue
 import pdb
+import wandb
 
 from signjoey.model import build_model
 from signjoey.batch import Batch
@@ -102,7 +103,7 @@ class TrainManager:
         self.num_valid_log = train_config.get("num_valid_log", 5)
         self.ckpt_queue = queue.Queue(maxsize=train_config.get("keep_last_ckpts", 5))
         self.eval_metric = train_config.get("eval_metric", "bleu")
-        if self.eval_metric not in ["bleu", "chrf", "wer", "rouge"]:
+        if self.eval_metric not in ["bleu", "chrf", "wer", "rouge", "bleu1"]:
             raise ValueError(
                 "Invalid setting for 'eval_metric': {}".format(self.eval_metric)
             )
@@ -203,7 +204,7 @@ class TrainManager:
             )
         
         # RL
-        self.sc_flag = False
+        self.sc_flag = train_config["sc_flag"]
 
     def _get_recognition_params(self, train_config) -> None:
         # NOTE (Cihan): The blank label is the silence index in the gloss vocabulary.
@@ -359,15 +360,20 @@ class TrainManager:
             shuffle=self.shuffle,
         )
         epoch_no = None
-        # Initialize CIDEr scorer for self critical reward
-        init_scorer()
+        wandb.watch(self.model, log='all')
+        wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/training.py')
         # Make sure once sc_flag is on, it stays on
         rl_track = False
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
 
-            if self.scheduler is not None and self.scheduler_step_at == "epoch":
-                self.scheduler.step(epoch=epoch_no)
+            if self.sc_flag == False:
+                if self.scheduler is not None and self.scheduler_step_at == "epoch":
+                    self.scheduler.step(epoch=epoch_no)
+            if self.sc_flag == True:
+                rl_track = True
+                for g in self.scheduler.optimizer.param_groups:
+                    g['lr'] = 5e-5
 
             self.model.train()
             start = time.time()
@@ -424,6 +430,7 @@ class TrainManager:
                     self.scheduler is not None
                     and self.scheduler_step_at == "step"
                     and update
+                    and self.sc_flag == False
                 ):
                     self.scheduler.step()
 
@@ -461,15 +468,17 @@ class TrainManager:
                     self.logger.info(log_out)
                     start = time.time()
                     total_valid_duration = 0
-
                 # validate on the entire dev set
+                #if self.sc_flag == True:
+                    #self.steps += 100
+                    #update = True
                 if self.steps % self.validation_freq == 0 and update:
                     valid_start_time = time.time()
                     # TODO (Cihan): There must be a better way of passing
                     #   these recognition only and translation only parameters!
                     #   Maybe have a NamedTuple with optional fields?
                     #   Hmm... Future Cihan's problem.
-                    self.do_recognition = True # This is becuase RL makes this false for training
+                    #self.do_recognition = True # This is becuase RL makes this false for training
                     val_res = validate_on_data(
                         model=self.model,
                         data=valid_data,
@@ -568,7 +577,7 @@ class TrainManager:
                             ckpt_score = 100 - val_res["valid_scores"][self.eval_metric]
                         else:
                             ckpt_score = val_res["valid_scores"][self.eval_metric]
-
+                    #pdb.set_trace()
                     new_best = False
                     if self.is_best(ckpt_score):
                         self.best_ckpt_score = ckpt_score
@@ -588,13 +597,15 @@ class TrainManager:
                         and self.scheduler_step_at == "validation"
                     ):
                         prev_lr = self.scheduler.optimizer.param_groups[0]["lr"]
-                        self.scheduler.step(ckpt_score)
+                        if self.sc_flag == False:
+                            self.scheduler.step(ckpt_score)
                         now_lr = self.scheduler.optimizer.param_groups[0]["lr"]
 
                         # Make sure to comment this out if you want to training to go longer
                         if prev_lr != now_lr:
                             if self.last_best_lr != prev_lr:
-                                self.stop = True
+                                if self.sc_flag == False:
+                                    self.stop = True
 
                     # append to validation report
                     self._add_report(
@@ -664,6 +675,7 @@ class TrainManager:
                         if self.do_translation
                         else -1,
                         # Other
+                        #val_res["valid_scores"]["cider"] if self.do_translation else -1,
                         val_res["valid_scores"]["chrf"] if self.do_translation else -1,
                         val_res["valid_scores"]["rouge"] if self.do_translation else -1,
                     )
@@ -680,7 +692,10 @@ class TrainManager:
 
                     ###############################################################################
                     # Swap to RL once BLEU scores are good enough for finetuning (normally do > 19)
-                    if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 15:
+                    if val_res["valid_scores"]["bleu_scores"]["bleu4"] > 20:
+                        print("\r\n##############################################")
+                        print("\r\nSwapping to SCST Training\r\n")
+                        print("##############################################\r\n")
                         rl_track = True
                     if rl_track:
                         self.do_recognition = False
@@ -786,20 +801,25 @@ class TrainManager:
             else None,
             sc_flag=self.sc_flag
         )
+        
+        wandb.log({'train/loss': translation_loss.item()})
 
         # normalize translation loss
         if self.do_translation:
             if self.translation_normalization_mode == "batch":
-                txt_normalization_factor = batch.num_seqs
+                if self.sc_flag == False:
+                    txt_normalization_factor = batch.num_seqs
+                else:
+                    txt_normalization_factor = 1.0
             elif self.translation_normalization_mode == "tokens":
                 txt_normalization_factor = batch.num_txt_tokens
             else:
                 raise NotImplementedError("Only normalize by 'batch' or 'tokens'")
-
             # division needed since loss.backward sums the gradients until updated
             normalized_translation_loss = translation_loss / (
                 txt_normalization_factor * self.batch_multiplier
             )
+            wandb.log({'train/normalized_loss': normalized_translation_loss})
         else:
             normalized_translation_loss = 0
 
@@ -825,7 +845,9 @@ class TrainManager:
             self.optimizer.zero_grad()
 
             # increment step counter
-            self.steps += 1
+            if self.sc_flag:
+                self.steps += 10
+            self.steps += 1 # Normally 1
 
         # increment token counter
         if self.do_recognition:
@@ -1053,7 +1075,11 @@ def train(cfg_file: str) -> None:
     txt_vocab_file = "{}/txt.vocab".format(cfg["training"]["model_dir"])
     txt_vocab.to_file(txt_vocab_file)
 
+    # Initialize CIDEr scorer for self critical reward
+    init_scorer()
+
     # train the model
+    wandb.init(name=cfg['training']['model_dir']+'_run-2', project='SCST_Transformer', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data
@@ -1061,7 +1087,9 @@ def train(cfg_file: str) -> None:
     # predict with the best model on validation and test
     # (if test data is available)
     ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
+    #ckpt = "resnet_SCST_no_norm/23900.ckpt"
     output_name = "best.IT_{:08d}".format(trainer.best_ckpt_iteration)
+    #output_name = "best.IT_23900"
     output_path = os.path.join(trainer.model_dir, output_name)
     logger = trainer.logger
     del trainer

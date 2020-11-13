@@ -9,6 +9,7 @@ import pickle as pickle
 import time
 import torch.nn as nn
 import pdb
+import wandb
 
 from typing import List
 from torchtext.data import Dataset
@@ -20,6 +21,7 @@ from signjoey.helpers import (
     load_checkpoint,
 )
 from signjoey.metrics import bleu, chrf, rouge, wer_list
+from signjoey.scoring import cider
 from signjoey.model import build_model, SignModel
 from signjoey.batch import Batch
 from signjoey.data import load_data, make_data_iter
@@ -244,9 +246,16 @@ def validate_on_data(
             assert len(txt_ref) == len(txt_hyp)
             #pdb.set_trace()
             # TXT Metrics
+            txt_cider = cider(references=txt_ref, hypotheses=txt_hyp)
             txt_bleu = bleu(references=txt_ref, hypotheses=txt_hyp)
             txt_chrf = chrf(references=txt_ref, hypotheses=txt_hyp)
             txt_rouge = rouge(references=txt_ref, hypotheses=txt_hyp)
+            # Wandb logging
+            wandb.log({'val/bleu_1': txt_bleu["bleu1"]})
+            wandb.log({'val/bleu_2': txt_bleu["bleu2"]})
+            wandb.log({'val/bleu_3': txt_bleu["bleu3"]})
+            wandb.log({'val/bleu_4': txt_bleu["bleu4"]})
+            wandb.log({'val/cider': txt_cider})
 
         valid_scores = {}
         if do_recognition:
@@ -254,9 +263,11 @@ def validate_on_data(
             valid_scores["wer_scores"] = gls_wer_score
         if do_translation:
             valid_scores["bleu"] = txt_bleu["bleu4"]
+            valid_scores["bleu1"] = txt_bleu["bleu1"]
             valid_scores["bleu_scores"] = txt_bleu
             valid_scores["chrf"] = txt_chrf
             valid_scores["rouge"] = txt_rouge
+            valid_scores["cider"] = txt_cider
 
     results = {
         "valid_scores": valid_scores,

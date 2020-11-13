@@ -14,7 +14,7 @@ from signjoey.embeddings import Embeddings, SpatialEmbeddings
 from signjoey.encoders import Encoder, RecurrentEncoder, TransformerEncoder
 from signjoey.decoders import Decoder, RecurrentDecoder, TransformerDecoder
 from signjoey.search import beam_search, greedy
-from signjoey.scoring import get_self_critical_reward, RewardCriterion, init_scorer, get_self_critical_reward_bleu
+from signjoey.scoring import get_self_critical_reward, RewardCriterion, init_scorer, get_self_critical_reward_bleu, calc_batch_cider
 from signjoey.vocabulary import (
     TextVocabulary,
     GlossVocabulary,
@@ -29,6 +29,7 @@ from torch import Tensor
 from typing import Union
 
 import pdb
+import wandb
 
 
 class SignModel(nn.Module):
@@ -237,12 +238,15 @@ class SignModel(nn.Module):
             gen_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=gen_res)
             greedy_sentences = self.txt_vocab.rl_arrays_to_sentences(arrays=greedy_res)
             data_gts = self.txt_vocab.rl_arrays_to_sentences(arrays=batch.txt_input[:, 1:]) # Special indexing to cut off <s> or BOS token
-            pdb.set_trace()
-            reward = get_self_critical_reward_bleu(greedy_sentences, data_gts, gen_sentences, gen_res.shape[1])
+            #pdb.set_trace()
+            #reward = get_self_critical_reward_bleu(greedy_sentences, data_gts, gen_sentences, gen_res.shape[1])
             reward = get_self_critical_reward(greedy_sentences, data_gts, gen_sentences, gen_res.shape[1])
             #if (output.reshape(-1).shape[0] != reward.reshape(-1).shape[0]):
             #    pdb.set_trace()
             reward = torch.from_numpy(reward).float().to(gen_res.device)
+            wandb.log({'train/avg_reward': reward.mean().item()})
+            train_cider = calc_batch_cider(greedy_sentences, data_gts)
+            wandb.log({'train/cider': train_cider})
             #pdb.set_trace()
             #############################################################################
             #temp_output = output.gather(2, gen_res.data.unsqueeze(2)).squeeze(2)
@@ -252,6 +256,7 @@ class SignModel(nn.Module):
             #    pdb.set_trace()
             loss = self.rl_criterion(output, gen_res.data, reward)
             loss = loss.mean()
+            #wandb.log({'train/loss': loss.item()})
             #pdb.set_trace()
             return None, loss # recognition_loss=0, translation_loss=loss
             

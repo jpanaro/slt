@@ -20,7 +20,7 @@ from trl.core import (logprobs_from_logits,
                          add_suffix)
 
 from signjoey.external_metrics import sacrebleu
-from signjoey.helpers import array_to_str, score_conv, filter_logits
+from signjoey.helpers import array_to_str, score_conv, filter_logits, eos_indice, trim_probs_and_vals
 
 class AdaptiveKLController:
     """
@@ -58,10 +58,10 @@ class PPOTrainer:
         "vf_coef":.1,
         "batch_size": 256, # Always make sure this batch size matches config batch size, default 256
         "forward_batch_size": 16, # TODO abstract this config to TrainManager, default 16
-        "ppo_epochs": 4, # Normally 4
+        "ppo_epochs": 1, # Normally 4
     } 
     
-    def __init__(self, model, ref_model, old_optimizer, **ppo_params):
+    def __init__(self, model, ref_model, optimizer, **ppo_params):
         """
         Initialize PPOTrainer.
         
@@ -92,7 +92,7 @@ class PPOTrainer:
         self.model = model
         #self.model.eval()
         #self.optimizer = Adam(model.parameters(), lr=self.ppo_params['lr'])
-        self.optimizer = old_optimizer
+        self.optimizer = optimizer
      
         self.kl_ctl = AdaptiveKLController(self.ppo_params['init_kl_coef'],
                                            self.ppo_params['target'],
@@ -125,7 +125,7 @@ class PPOTrainer:
         #model_input = torch.cat((query, response), axis=1)
         
         t = time.time()
-        logprobs, ref_logprobs, values, scores = self.batched_forward_pass(batch)
+        logprobs, ref_logprobs, values, scores, active_eos_index, ref_eos_index = self.batched_forward_pass(batch)
         scores = torch.FloatTensor(scores).cuda()
         logs['env/avg_scores'] = torch.mean(scores).cpu().numpy()
         #pdb.set_trace()
@@ -136,7 +136,7 @@ class PPOTrainer:
 
         t = time.time()
         #pdb.set_trace()
-        rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs)
+        rewards, non_score_reward, kl_coef = self.compute_rewards(scores, logprobs, ref_logprobs, active_eos_index)
         #pdb.set_trace()
         timing['time/ppo/compute_rewards'] = time.time()-t 
         
@@ -151,7 +151,7 @@ class PPOTrainer:
                 idx = idxs[i]
                 if batch.sgn[idx:idx+1].shape[0] != 0:
                     train_stats = self.train_minibatch(logprobs[idx:idx+1], values[idx:idx+1],
-                                                    rewards[idx:idx+1], batch, idx)
+                                                    rewards[idx:idx+1], batch, idx, active_eos_index[idx])
                     all_stats.append(train_stats)
         timing['time/ppo/optimize_step'] = time.time()-t
         
@@ -186,8 +186,12 @@ class PPOTrainer:
         logprobs = []
         ref_logprobs = []
         values = []
+        ref_vals = []
         scores = []
         pre_scores = [] # JUST FOR DEBUGGING
+        active_eos_index = [] # Holds the EOS index for each sample in batch, used to cut all logprobs/values after it
+        ref_eos_index = []
+        active_debug = []
         #pdb.set_trace()
         for i in range(int(self.ppo_params['batch_size']/fbs)): # 16 times (using 256 bs and 16 fbs)
             m_input = batch.txt_input[i*fbs:(i+1)*fbs] # splits batch into chunks of 16 until 256 is reached
@@ -200,7 +204,7 @@ class PPOTrainer:
                 txt_input=batch.txt_input[i*fbs:(i+1)*fbs],
                 txt_mask=batch.txt_mask[i*fbs:(i+1)*fbs],
             )
-            ref_decoder_outputs, _, _ = self.ref_model.forward(
+            ref_decoder_outputs, _, ref_values = self.ref_model.forward(
                 sgn=batch.sgn[i*fbs:(i+1)*fbs],
                 sgn_mask=batch.sgn_mask[i*fbs:(i+1)*fbs],
                 sgn_lengths=batch.sgn_lengths[i*fbs:(i+1)*fbs],
@@ -231,6 +235,8 @@ class PPOTrainer:
             #ref_res = torch.distributions.Categorical(logits=ref_logits[:,:-1,:].detach()).sample()
             #active_res = logits[:,:-1,:].argmax(2) # Maybe do respond_to_batch() from iwerratrl here
             active_res = logits.argmax(2)
+            active_debug.append(active_res)
+            #pdb.set_trace()
             ref_res = ref_logits.argmax(2)
             #ref_res = ref_logits[:,:-1,:].argmax(2)
             #pdb.set_trace()
@@ -251,45 +257,65 @@ class PPOTrainer:
                 #pdb.set_trace()
                 pre_scores.append(bleu_temp.scores[3])
                 scores.append(score_conv(bleu_temp.scores[3]))
+                #pdb.set_trace()
+                active_eos_index.append(eos_indice(active_res[j]))
+                ref_eos_index.append(eos_indice(ref_res[j]))
+                #scores.append(bleu_temp.scores[3])
                 #scores.append(bleu_temp.scores[3])
                 #ref_scores.append(ref_bleu_temp.scores[3])
-            pdb.set_trace()
+            #pdb.set_trace()
             values.append(active_values[:,:-1].detach())
+            ref_vals.append(ref_values[:,:-1].detach())
             #logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], active_res[:,1:]).detach())
             #logprobs.append(probs.detach())
             #ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], m_input[:,1:]).detach())
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], ref_res[:,1:]).detach())
             #ref_logprobs.append(ref_probs.detach())
+        logprobs = torch.cat(logprobs)
+        ref_logprobs = torch.cat(ref_logprobs)
+        values = torch.cat(values)
+        ref_vals = torch.cat(ref_vals)
+        active_debug = torch.cat(active_debug)
+        trim_probs_and_vals(logprobs, values, active_eos_index)
+        trim_probs_and_vals(ref_logprobs, ref_vals, ref_eos_index)
         #pdb.set_trace()
         print("\r\nMean of Training BLEU-4 Scores: " + str(mean(pre_scores)) + '\r\n')
-        return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
+        #return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
+        return logprobs, ref_logprobs, values, scores, active_eos_index, ref_eos_index
     
-    def train_minibatch(self, logprobs, values, rewards, batch, idx):
+    def train_minibatch(self, logprobs, values, rewards, batch, idx, eos_idx):
         """Train one PPO minibatch"""
-        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, batch, idx)
+        loss_p, loss_v, train_stats  = self.loss(logprobs, values, rewards, batch, idx, eos_idx)
         loss = loss_p + loss_v
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         return train_stats
     
-    def compute_rewards(self, scores, logprobs, ref_logprobs):
+    def compute_rewards(self, scores, logprobs, ref_logprobs, eos_idxs):
         """Compute per token rewards from scores and KL-penalty."""
         kl = logprobs - ref_logprobs
         #pdb.set_trace()
         non_score_reward = -self.kl_ctl.value * kl
         rewards = non_score_reward.clone().detach()
-        rewards[:, -1] += scores
+        #pdb.set_trace()
+        for i in range(rewards.shape[0]):
+            if eos_idxs[i] == rewards.shape[1]:
+                rewards[i][rewards.shape[1]-1] += scores[i]
+            else:    
+                rewards[i][eos_idxs[i]] += scores[i] 
+        #rewards[:, -1] += scores
         return rewards, non_score_reward, self.kl_ctl.value
 
-    def loss(self, old_logprobs, values, rewards, batch, idx):
+    def loss(self, old_logprobs, values, rewards, batch, idx, eos_idx):
         """Calculate policy and value losses."""
         #pdb.set_trace()
         lastgaelam = 0
         advantages_reversed = []
         m_input = batch.txt_input[idx:idx+1]
-        gen_len = batch.txt_input[idx:idx+1].shape[1]-1
+        #gen_len = batch.txt_input[idx:idx+1].shape[1]-1
+        gen_len = eos_idx
         
         ###################################################
         # Potentially filter logprobs here.
@@ -303,7 +329,10 @@ class PPOTrainer:
             lastgaelam = delta + self.ppo_params['gamma'] * self.ppo_params['lam'] * lastgaelam
             advantages_reversed.append(lastgaelam)
         advantages = torch.stack(advantages_reversed[::-1]).transpose(0, 1)
+        # Pad advantages to fit values range
         #pdb.set_trace()
+        padding_len = values.shape[1]-gen_len
+        advantages = F.pad(advantages, [0, padding_len, 0, 0])
         returns = advantages + values
         advantages = whiten(advantages)
         advantages = advantages.detach()
@@ -320,14 +349,20 @@ class PPOTrainer:
         #filter_logits(logits)
         #active_res = logits[:,:-1,:].argmax(2)
         active_res = logits.argmax(2)
+        #pdb.set_trace()
+        eos_single = eos_indice(active_res[0])
         #active_res = torch.distributions.Categorical(logits=logits[:,:-1,:].detach()).sample()
         logprob = logprobs_from_logits(logits[:,:-1,:], active_res[:, 1:])
+        #pdb.set_trace()
+        trim_probs_and_vals(logprob, vpred, [eos_single])
         #logprob = logprobs_from_logits(logits[:,:-1,:], m_input[:,1:])
         
         #only the generation part of the values/logprobs is needed
         #pdb.set_trace()
+        # Reset gen len for clipping
+        #pdb.set_trace()
+        gen_len = batch.txt_input[idx:idx+1].shape[1]-1
         logprob, vpred = logprob[:, -gen_len:], vpred[:,-gen_len-1:-1]
-
         vpredclipped = clip_by_value(vpred,
                                      values - self.ppo_params["cliprange_value"],
                                      values + self.ppo_params["cliprange_value"])

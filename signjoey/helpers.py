@@ -309,13 +309,38 @@ def array_to_str(arr):
 # Converts score from a range of 90->100 to -4.5->4.5 and 60->89 to 0
 # Lets try 80-100 next
 def score_conv(score):
-    if score >= 80:
-        #new_score = (((score - 90.0)*9.0)/10.0)-4.5 # for 90->100
-        new_score = (((score - 80.0)*9.0)/20.0)-4.5
-    else:
-        new_score = 0.0 # Normally -4.0
-    #new_score = (((score * 9.0)/100.0)-4.5
+    # if score >= 80:
+    #     #new_score = (((score - 90.0)*9.0)/10.0)-4.5 # for 90->100
+    #     new_score = (((score - 80.0)*9.0)/20.0)-4.5
+    # else:
+    #     new_score = 0.0 # Normally -4.0
+    # #new_score = (((score * 9.0)/100.0)-4.5
+    new_score = (score/10.0) - 2.0
+
     return new_score
+
+# Finds the first indice that contains an EOS token and returns the number of that indice
+def eos_indice(res):
+    for i in range(res.shape[0]):
+        if res[i] == 3: # 3 = EOS token
+            return i
+
+# Zeros out all values and probabilities after the EOS indice
+def trim_probs_and_vals(logprobs, values, eos_index):
+    bs = logprobs.shape[0] # full batch size 256
+    prob_len = logprobs.shape[1]
+    eos_track = 0
+
+    for i in range(bs):
+        for j in range(prob_len):
+            #pdb.set_trace()
+            if j > eos_index[i]:
+                #pdb.set_trace()
+                logprobs[i][j] = 0.0
+                values[i][j] = 0.0
+        # Once one fbs is done, add 16 to eos track to go to next batch
+        #eos_track += 16
+
 
 # Performs top_p_top_k filtering on all logits in a batch
 def filter_logits(logits):

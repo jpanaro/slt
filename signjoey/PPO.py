@@ -251,7 +251,7 @@ class PPOTrainer:
                 #reference_temp = array_to_str(reference_sentences[j])
                 gt_temp = array_to_str(gt_sentences[j])
                 #ref_bleu_temp = sacrebleu.sentence_bleu(reference_temp, gt_temp)
-                test_bleu = sentence_bleu([gt_sentences[j]], active_sentences[j], weights=(0, 0, 0, 1))
+                #test_bleu = sentence_bleu([gt_sentences[j]], active_sentences[j], weights=(0, 0, 0, 1))
                 bleu_temp = sacrebleu.sentence_bleu(active_temp, gt_temp)
                 #bleu_temp = sacrebleu.sentence_bleu(gt_temp, gt_temp)
                 #pdb.set_trace()

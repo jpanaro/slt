@@ -36,6 +36,7 @@ from signjoey.prediction import test
 from signjoey.metrics import wer_single
 from signjoey.vocabulary import SIL_TOKEN
 from signjoey.PPO import PPOTrainer
+from signjoey.scoring import init_scorer
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from torchtext.data import Dataset
@@ -371,6 +372,8 @@ class TrainManager:
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/PPO.py')
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/training.py')
         logs = dict()
+        # Initialize CIDEr scorers
+        init_scorer()
         # Load reference model for PPO trainer
         #pdb.set_trace()
         if self.config_copy['training']['use_ppo']:
@@ -1078,7 +1081,7 @@ def train(cfg_file: str) -> None:
     txt_vocab.to_file(txt_vocab_file)
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-15', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-debug', project='PPO_Transformer_step', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data

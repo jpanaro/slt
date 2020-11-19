@@ -6,6 +6,7 @@ import collections
 import time
 import random
 import pdb
+import wandb
 from nltk.translate.bleu_score import sentence_bleu
 from statistics import mean
 
@@ -21,6 +22,7 @@ from trl.core import (logprobs_from_logits,
 
 from signjoey.external_metrics import sacrebleu
 from signjoey.helpers import array_to_str, score_conv, filter_logits
+from signjoey.scoring import calc_batch_cider, calc_sent_cider
 
 class AdaptiveKLController:
     """
@@ -58,7 +60,7 @@ class PPOTrainer:
         "vf_coef":.1,
         "batch_size": 256, # Always make sure this batch size matches config batch size, default 256
         "forward_batch_size": 16, # TODO abstract this config to TrainManager, default 16
-        "ppo_epochs": 4, # Normally 4
+        "ppo_epochs": 2, # Normally 4
     } 
     
     def __init__(self, model, ref_model, old_optimizer, **ppo_params):
@@ -187,7 +189,8 @@ class PPOTrainer:
         ref_logprobs = []
         values = []
         scores = []
-        pre_scores = [] # JUST FOR DEBUGGING
+        pre_bleus = [] # JUST FOR DEBUGGING
+        pre_ciders = []
         #pdb.set_trace()
         for i in range(int(self.ppo_params['batch_size']/fbs)): # 16 times (using 256 bs and 16 fbs)
             m_input = batch.txt_input[i*fbs:(i+1)*fbs] # splits batch into chunks of 16 until 256 is reached
@@ -245,15 +248,18 @@ class PPOTrainer:
                 #reference_temp = array_to_str(reference_sentences[j])
                 gt_temp = array_to_str(gt_sentences[j])
                 #ref_bleu_temp = sacrebleu.sentence_bleu(reference_temp, gt_temp)
-                test_bleu = sentence_bleu([gt_sentences[j]], active_sentences[j], weights=(0, 0, 0, 1))
+                #test_bleu = sentence_bleu([gt_sentences[j]], active_sentences[j], weights=(0, 0, 0, 1))
+                cider_temp = calc_sent_cider(active_temp, gt_temp)
                 bleu_temp = sacrebleu.sentence_bleu(active_temp, gt_temp)
                 #bleu_temp = sacrebleu.sentence_bleu(gt_temp, gt_temp)
                 #pdb.set_trace()
-                pre_scores.append(bleu_temp.scores[3])
-                scores.append(score_conv(bleu_temp.scores[3]))
+                pre_bleus.append(bleu_temp.scores[3])
+                pre_ciders.append(cider_temp)
+                #scores.append(score_conv(bleu_temp.scores[3]))
+                scores.append(cider_temp)
                 #scores.append(bleu_temp.scores[3])
                 #ref_scores.append(ref_bleu_temp.scores[3])
-            pdb.set_trace()
+            #pdb.set_trace()
             values.append(active_values[:,:-1].detach())
             #logprobs.append(logprobs_from_logits(logits[:,:-1,:], m_input[:,1:]).detach())
             logprobs.append(logprobs_from_logits(logits[:,:-1,:], active_res[:,1:]).detach())
@@ -262,7 +268,10 @@ class PPOTrainer:
             ref_logprobs.append(logprobs_from_logits(ref_logits[:,:-1,:], ref_res[:,1:]).detach())
             #ref_logprobs.append(ref_probs.detach())
         #pdb.set_trace()
-        print("\r\nMean of Training BLEU-4 Scores: " + str(mean(pre_scores)) + '\r\n')
+        print("\r\nMean of Training BLEU-4 Scores: " + str(mean(pre_bleus)) + '\r\n')
+        print("\r\nMean of Training CIDEr Scores: " + str(mean(pre_ciders)*10) + '\r\n')
+        wandb.log({'train/avg_CIDEr_score': mean(pre_ciders)*10})
+        #pdb.set_trace()
         return torch.cat(logprobs), torch.cat(ref_logprobs), torch.cat(values), scores
     
     def train_minibatch(self, logprobs, values, rewards, batch, idx):

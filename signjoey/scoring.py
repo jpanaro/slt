@@ -197,6 +197,26 @@ def calc_batch_cider(hyp, ref, vocab_dict, config):
 
     return avg_scores # used to be *100
 
+def cider(references, hypotheses):
+    """
+    Calculates CIDEr-d score for batch of sentences.
+    """
+    res = OrderedDict()
+    for i in range(len(references)):
+        res[i] = [hypotheses[i]]
+    
+    gts = OrderedDict()
+    for j in range(len(references)):
+        gts[j] = [references[j]]
+    
+    res_ = [{'image_id':i, 'caption': res[i]} for i in range(len(res))]
+    gts_ = {i: gts[i] for i in range(len(references))}
+
+    #pdb.set_trace()
+    avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
+
+    return avg_scores*10
+
 class RewardCriterion(nn.Module):
     def __init__(self):
         super(RewardCriterion, self).__init__()

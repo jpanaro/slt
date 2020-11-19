@@ -2,6 +2,8 @@ data/download.sh
 
 data/
 
+cider/
+
 sign_sample_model/
 sign_sample_model_copy/
 sign_sample_model_new/

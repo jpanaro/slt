@@ -251,11 +251,19 @@ def validate_on_data(
             txt_chrf = chrf(references=txt_ref, hypotheses=txt_hyp)
             txt_rouge = rouge(references=txt_ref, hypotheses=txt_hyp)
             # Wandb logging
-            wandb.log({'val/bleu_1': txt_bleu["bleu1"]})
-            wandb.log({'val/bleu_2': txt_bleu["bleu2"]})
-            wandb.log({'val/bleu_3': txt_bleu["bleu3"]})
-            wandb.log({'val/bleu_4': txt_bleu["bleu4"]})
-            wandb.log({'val/cider': txt_cider})
+            #pdb.set_trace()
+            if len(data) == 519: #validation
+                wandb.log({'val/bleu_1': txt_bleu["bleu1"]})
+                wandb.log({'val/bleu_2': txt_bleu["bleu2"]})
+                wandb.log({'val/bleu_3': txt_bleu["bleu3"]})
+                wandb.log({'val/bleu_4': txt_bleu["bleu4"]})
+                wandb.log({'val/cider': txt_cider*100})
+            else: # testing
+                wandb.log({'test/bleu_1': txt_bleu["bleu1"]})
+                wandb.log({'test/bleu_2': txt_bleu["bleu2"]})
+                wandb.log({'test/bleu_3': txt_bleu["bleu3"]})
+                wandb.log({'test/bleu_4': txt_bleu["bleu4"]})
+                wandb.log({'test/cider': txt_cider*100})     
 
         valid_scores = {}
         if do_recognition:

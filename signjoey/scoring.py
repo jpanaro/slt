@@ -216,7 +216,7 @@ def cider(references, hypotheses):
     #pdb.set_trace()
     avg_scores, cider_scores = CiderD_scorer.compute_score(gts_, res_)
 
-    return avg_scores*100
+    return avg_scores
 
 class RewardCriterion(nn.Module):
     def __init__(self):

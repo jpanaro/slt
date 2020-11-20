@@ -44,7 +44,7 @@ class PPOTrainer:
     """
     
     default_params = {
-        "lr": 1.41e-5,
+        "lr": 1.41e-5, # Try 7.07e-6
         "adap_kl_ctrl": True, 
         "init_kl_coef":0.2,
         "target": 6,

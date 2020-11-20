@@ -365,7 +365,7 @@ class TrainManager:
         logs = dict()
         # Load reference model for PPO trainer
         #pdb.set_trace()
-        init_scorer()
+        #init_scorer()
         if self.config_copy['training']['use_ppo']:
             model_load_path = self.config_copy["training"]["reference_model"]
             ref_model = copy.deepcopy(self.model)
@@ -1022,6 +1022,8 @@ def train(cfg_file: str) -> None:
     train_data, dev_data, test_data, gls_vocab, txt_vocab = load_data(
         data_cfg=cfg["data"]
     )
+    
+    init_scorer()
 
     # build model and load parameters into it
     do_recognition = cfg["training"].get("recognition_loss_weight", 1.0) > 0.0
@@ -1079,7 +1081,9 @@ def train(cfg_file: str) -> None:
     # predict with the best model on validation and test
     # (if test data is available)
     ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
+    #ckpt = "reference_model/7300.ckpt"
     output_name = "best.IT_{:08d}".format(trainer.best_ckpt_iteration)
+    #output_name = "best_IT_7300"
     output_path = os.path.join(trainer.model_dir, output_name)
     logger = trainer.logger
     del trainer

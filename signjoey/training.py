@@ -1079,17 +1079,17 @@ def train(cfg_file: str) -> None:
     init_scorer()
 
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-NO_SCST', project='SCST_Transformer', config=cfg)
-    #trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
+    wandb.init(name=cfg['training']['model_dir']+'', project='SCST_Transformer', config=cfg)
+    trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data
 
     # predict with the best model on validation and test
     # (if test data is available)
-    #ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
-    ckpt = "resnet_SCST_2/6600.ckpt"
-    #output_name = "best.IT_{:08d}".format(trainer.best_ckpt_iteration)
-    output_name = "best.IT_6600"
+    ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
+    #ckpt = "resnet_SCST_2/6600.ckpt"
+    output_name = "best.IT_{:08d}".format(trainer.best_ckpt_iteration)
+    #output_name = "best.IT_6600"
     output_path = os.path.join(trainer.model_dir, output_name)
     logger = trainer.logger
     del trainer

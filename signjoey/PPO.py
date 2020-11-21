@@ -60,7 +60,7 @@ class PPOTrainer:
         "vf_coef":.1,
         "batch_size": 256, # Always make sure this batch size matches config batch size, default 256
         "forward_batch_size": 16, # TODO abstract this config to TrainManager, default 16
-        "ppo_epochs": 2, # Normally 4
+        "ppo_epochs": 4, # Normally 4
     } 
     
     def __init__(self, model, ref_model, old_optimizer, **ppo_params):

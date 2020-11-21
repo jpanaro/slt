@@ -372,8 +372,6 @@ class TrainManager:
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/PPO.py')
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/training.py')
         logs = dict()
-        # Initialize CIDEr scorers
-        init_scorer()
         # Load reference model for PPO trainer
         #pdb.set_trace()
         if self.config_copy['training']['use_ppo']:
@@ -1079,6 +1077,9 @@ def train(cfg_file: str) -> None:
     gls_vocab.to_file(gls_vocab_file)
     txt_vocab_file = "{}/txt.vocab".format(cfg["training"]["model_dir"])
     txt_vocab.to_file(txt_vocab_file)
+
+    # Initialize CIDEr scorers
+    init_scorer()
 
     # train the model
     wandb.init(name=cfg['training']['model_dir']+'_run-18', project='PPO_Transformer_step', config=cfg)

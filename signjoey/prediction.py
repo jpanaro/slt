@@ -9,6 +9,7 @@ import pickle as pickle
 import time
 import wandb
 import torch.nn as nn
+import pdb
 
 from typing import List
 from torchtext.data import Dataset
@@ -244,7 +245,9 @@ def validate_on_data(
             assert len(txt_ref) == len(txt_hyp)
 
             # TXT Metrics
-            pdb.set_trace()
+            #if translation_beam_size == 5:
+                #if translation_beam_alpha == 2:
+            #pdb.set_trace()
             txt_bleu = bleu(references=txt_ref, hypotheses=txt_hyp)
             txt_chrf = chrf(references=txt_ref, hypotheses=txt_hyp)
             txt_rouge = rouge(references=txt_ref, hypotheses=txt_hyp)

@@ -367,32 +367,13 @@ class TrainManager:
         )
         epoch_no = None
         wandb.watch(self.model, log='all')
-        #wandb.save('PPO.py')
-        #wandb.save(os.path.join(wandb.run.dir, "./PPO.py")) # these do not save files how I want
+        # Save crucial files to wandb
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/PPO.py')
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/training.py')
         wandb.save('/shared/kgcoe-research/mil/sign_language_review/slt_phase2/Models_scripts/Joe/slt_phase2/models/slt/signjoey/helpers.py')
         logs = dict()
         # Load reference model for PPO trainer
-        #pdb.set_trace()
         if self.config_copy['training']['use_ppo']:
-            #pdb.set_trace()
-            # compare_models(self.model, self.ref_model)
-            # for p1, p2 in zip(self.model.parameters(), self.ref_model.parameters()):
-            #     if p1.data.ne(p2.data).sum() > 0:
-            #         print("MISMATCH")
-            #pdb.set_trace()
-            # print("REGULAR_MODEL##################")
-            # for param in self.model.parameters():
-            #     print(param.name, param.data)
-            # print("REFERENCE_MODEL##################")
-            # for param in self.ref_model.parameters():
-            #     print(param.name, param.data)
-            #pdb.set_trace()
-            #model_load_path = self.config_copy["training"]["reference_model"]
-            #ref_model = copy.deepcopy(self.model)
-            #load_reference_model(model_load_path, temp_model=ref_model) # uses cuda by default, might be an issue
-            init_scorer() # Initialize CIDEr scorer
             ppo_trainer = PPOTrainer(self.model, self.ref_model, self.optimizer) # Using default_params so pass 'None'
 
         for epoch_no in range(self.epochs):
@@ -414,7 +395,6 @@ class TrainManager:
                 processed_txt_tokens = self.total_txt_tokens
                 epoch_translation_loss = 0
 
-            #pdb.set_trace()
             # Grab next batch from iterator
             batch = next(iter(train_iter))
             #batch= next()
@@ -432,7 +412,6 @@ class TrainManager:
             # Run a PPO step
             if self.config_copy['training']['use_ppo']:
                     stats = ppo_trainer.step(batch)
-                    #pdb.set_trace()
                     logs.update(stats)
                     wandb.log(logs)
                     translation_loss = torch.tensor(stats['ppo/loss/total']/4) # Since ppo_epochs = 4
@@ -772,13 +751,6 @@ class TrainManager:
         :return normalized_recognition_loss: Normalized recognition loss
         :return normalized_translation_loss: Normalized translation loss
         """
-        ##############################################################################
-        # Once sc_flag is set, disable recognition loss, and only do translation loss
-        # which is now going to be substituted by the loss calculated by PPO
-        # may need to remove loss.backward() in PPOTrainer and just return loss
-        # see which is better
-        # TODO LOSS IS BACKPROPPED IN THIS FUNCTION NORMALLY
-        ##############################################################################
         recognition_loss, translation_loss = self.model.get_loss_for_batch(
             batch=batch,
             recognition_loss_function=self.recognition_loss_function
@@ -1046,13 +1018,6 @@ def train(cfg_file: str) -> None:
         do_recognition=do_recognition,
         do_translation=do_translation,
     )
-    #pdb.set_trace()
-    ################################################################################
-    # Potentially inject building of PPOTrainer here as well as loading of ref_model
-    # We most likely only need a TrainManager for the actual model being trained
-    # We only need to "activate" ref_model and PPOTrainer once the sc_flag
-    # (RL training) starts, otherwise they lay dormant
-    ################################################################################
 
     # for training management, e.g. early stopping and model selection
     trainer = TrainManager(model=model, ref_model=ref_model, config=cfg)
@@ -1080,8 +1045,10 @@ def train(cfg_file: str) -> None:
     txt_vocab_file = "{}/txt.vocab".format(cfg["training"]["model_dir"])
     txt_vocab.to_file(txt_vocab_file)
 
+    init_scorer() # Initialize CIDEr scorer
+
     # train the model
-    wandb.init(name=cfg['training']['model_dir']+'_run-debug', project='PPO_Transformer_step', config=cfg)
+    wandb.init(name=cfg['training']['model_dir']+'_run-resnet', project='PPO_Transformer_trim', config=cfg)
     trainer.train_and_validate(train_data=train_data, valid_data=dev_data)
     # Delete to speed things up as we don't need training data anymore
     del train_data, dev_data, test_data
